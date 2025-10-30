@@ -25,21 +25,22 @@ except Exception as e:
     st.error(f"⚠️ OpenAI client error: {str(e)}")
     OPENAI_AVAILABLE = False
 
-# --- Session State Initialization ---
+# --- Session State Initialization (No GSK Defaults—Neutral Baseline) ---
 if "production_data" not in st.session_state:
     st.session_state["production_data"] = {
-        "Company Name": "EcoManufacture Inc.",
-        "Industry": "Manufacturing",  # Options: Manufacturing, Tourism, Hospitality, Infrastructure, Other
+        "Company Name": "Enter Company Name",
+        "Industry": "Manufacturing",  # Neutral default (adjustable)
         "extracted_pdf_text": "",
-        # Core Dimensions Data
-        "resource_efficiency": {"renewable_energy_pct": 30, "energy_tech_count": 2, "water_reuse_pct": 40, "ai_score": 0},
-        "sustainable_production": {"recycled_material_pct": 20, "waste_intensity_pct": 30, "eco_design_cert": False, "ai_score": 0},
-        "chemical_waste": {"hazardous_reduction_pct": 20, "waste_recycling_pct": 50, "chemical_compliance": True, "ai_score": 0},
-        "circular_economy": {"takeback_program_pct": 20, "packaging_sustainable_pct": 50, "certified_supplier_pct": 30, "ai_score": 0},
-        "sustainable_procurement": {"procurement_criteria_count": 2, "sustainable_budget_pct": 10, "procurement_tracking": False, "ai_score": 0},
-        "life_cycle_thinking": {"lca_product_pct": 20, "consumer_comm": False, "lca_improvements": 1, "ai_score": 0},
-        "waste_management": {"food_waste_reduction_pct": 20, "segregation_rate_pct": 60, "circular_partnerships": False, "ai_score": 0},
-        "tourism_infrastructure": {"sustainable_material_pct": 30, "eco_tourism_pct": 0, "energy_water_efficiency": False, "ai_score": 0},
+        "extracted_sections": {},  # Stores GSK's key chapters (Environment, Procurement)
+        # Core Dimensions Data (Neutral Defaults)
+        "resource_efficiency": {"renewable_energy_pct": 0, "energy_tech_count": 0, "water_reuse_pct": 0, "ai_score": 0},
+        "sustainable_production": {"recycled_material_pct": 0, "waste_intensity_pct": 0, "eco_design_cert": False, "ai_score": 0},
+        "chemical_waste": {"hazardous_reduction_pct": 0, "waste_recycling_pct": 0, "chemical_compliance": False, "ai_score": 0},
+        "circular_economy": {"takeback_program_pct": 0, "packaging_sustainable_pct": 0, "certified_supplier_pct": 0, "ai_score": 0},
+        "sustainable_procurement": {"procurement_criteria_count": 0, "sustainable_budget_pct": 0, "procurement_tracking": False, "ai_score": 0},
+        "life_cycle_thinking": {"lca_product_pct": 0, "consumer_comm": False, "lca_improvements": 0, "ai_score": 0},
+        "waste_management": {"food_waste_reduction_pct": 0, "segregation_rate_pct": 0, "circular_partnerships": False, "ai_score": 0},
+        "tourism_infrastructure": {"sustainable_material_pct": 0, "eco_tourism_pct": 0, "energy_water_efficiency": False, "ai_score": 0},
         # Final Outputs
         "total_score": 0,
         "dimension_scores": {},
@@ -50,18 +51,18 @@ if "production_data" not in st.session_state:
 if "rerun_trigger" not in st.session_state:
     st.session_state["rerun_trigger"] = False
 
-# --- Constants (Scoring Framework) ---
+# --- Constants (Scoring Framework + GSK Report Alignment) ---
 DIMENSIONS = [
     {
         "id": "resource_efficiency",
         "name": "Resource Efficiency (SDG 12.2)",
         "weight": 0.25,
         "actions": [
-            {"name": "renewable_energy_pct", "desc": "Renewable energy percentage", "calc": lambda x: 10 if x >=50 else 5 if x >=30 else 0},
-            {"name": "energy_tech_count", "desc": "Number of energy-efficient tech categories", "calc": lambda x: min(10, x * 5)},
-            {"name": "water_reuse_pct", "desc": "Water reuse rate percentage", "calc": lambda x: 10 if x >=70 else 5 if x >=40 else 0}
+            {"name": "renewable_energy_pct", "desc": "Renewable energy percentage (e.g., GSK's 'imported renewable electricity')", "calc": lambda x: 10 if x >=50 else 5 if x >=30 else 0},
+            {"name": "energy_tech_count", "desc": "Number of energy-efficient tech categories (e.g., solar, heat recovery)", "calc": lambda x: min(10, x * 5)},
+            {"name": "water_reuse_pct", "desc": "Water reuse rate percentage (vs. baseline, e.g., GSK's 24% reduction)", "calc": lambda x: 10 if x >=70 else 5 if x >=40 else 0}
         ],
-        "ai_criteria": "Evaluate 1) energy intensity trends vs. industry peers, 2) water consumption efficiency (e.g., leak prevention). Return a score 0-5 (no extra text).",
+        "ai_criteria": "Evaluate 1) energy intensity vs. pharma/industry peers, 2) water leak prevention. Return 0-5 (no text).",
         "max_subtotal": 30
     },
     {
@@ -69,11 +70,11 @@ DIMENSIONS = [
         "name": "Sustainable Production (SDG 12.3)",
         "weight": 0.20,
         "actions": [
-            {"name": "recycled_material_pct", "desc": "Recycled/upcycled material percentage", "calc": lambda x: 10 if x >=40 else 5 if x >=20 else 0},
+            {"name": "recycled_material_pct", "desc": "Recycled material percentage (e.g., GSK's paper packaging)", "calc": lambda x: 10 if x >=40 else 5 if x >=20 else 0},
             {"name": "waste_intensity_pct", "desc": "Waste intensity vs. industry average (%)", "calc": lambda x: 10 if x <=20 else 5 if x <=40 else 0},
-            {"name": "eco_design_cert", "desc": "Eco-design certification (Yes/No)", "calc": lambda x: 10 if x else 0}
+            {"name": "eco_design_cert", "desc": "Eco-design certification (e.g., GSK's low-carbon inhalers)", "calc": lambda x: 10 if x else 0}
         ],
-        "ai_criteria": "Evaluate 1) material efficiency (yield improvement), 2) product end-of-life recyclability potential. Return a score 0-5 (no extra text).",
+        "ai_criteria": "Evaluate 1) material yield improvement, 2) product recyclability. Return 0-5 (no text).",
         "max_subtotal": 30
     },
     {
@@ -82,10 +83,10 @@ DIMENSIONS = [
         "weight": 0.18,
         "actions": [
             {"name": "hazardous_reduction_pct", "desc": "Hazardous chemical reduction vs. baseline (%)", "calc": lambda x: 7 if x >=50 else 3 if x >=20 else 0},
-            {"name": "waste_recycling_pct", "desc": "Production waste recycling rate (%)", "calc": lambda x: 7 if x >=80 else 3 if x >=50 else 0},
-            {"name": "chemical_compliance", "desc": "Compliance with REACH/Stockholm Convention", "calc": lambda x: 6 if x else 0}
+            {"name": "waste_recycling_pct", "desc": "Production waste recycling rate (e.g., GSK's 53% circular recovery)", "calc": lambda x: 7 if x >=80 else 3 if x >=50 else 0},
+            {"name": "chemical_compliance", "desc": "Compliance with REACH/AMR Alliance (e.g., GSK's API limits)", "calc": lambda x: 6 if x else 0}
         ],
-        "ai_criteria": "Evaluate 1) chemical spill prevention protocols, 2) hazardous waste treatment effectiveness. Return a score 0-3 (no extra text).",
+        "ai_criteria": "Evaluate 1) chemical spill protocols, 2) hazardous waste treatment. Return 0-3 (no text).",
         "max_subtotal": 20
     },
     {
@@ -93,11 +94,11 @@ DIMENSIONS = [
         "name": "Circular Economy Integration (SDG 12.5)",
         "weight": 0.10,
         "actions": [
-            {"name": "takeback_program_pct", "desc": "Product lines covered by take-back programs (%)", "calc": lambda x: 4 if x >=50 else 2 if x >=20 else 0},
-            {"name": "packaging_sustainable_pct", "desc": "Renewable/compostable packaging percentage", "calc": lambda x: 3 if x >=80 else 1 if x >=50 else 0},
-            {"name": "certified_supplier_pct", "desc": "Suppliers with sustainability certifications (%)", "calc": lambda x: 3 if x >=60 else 1 if x >=30 else 0}
+            {"name": "takeback_program_pct", "desc": "Product lines with take-back programs (%)", "calc": lambda x: 4 if x >=50 else 2 if x >=20 else 0},
+            {"name": "packaging_sustainable_pct", "desc": "Sustainable packaging percentage (e.g., GSK's 86% deforestation-free paper)", "calc": lambda x: 3 if x >=80 else 1 if x >=50 else 0},
+            {"name": "certified_supplier_pct", "desc": "Sustainable suppliers (%) (e.g., GSK's 98% palm oil)", "calc": lambda x: 3 if x >=60 else 1 if x >=30 else 0}
         ],
-        "ai_criteria": "Evaluate 1) tier 2 supplier sustainability practices, 2) product-as-a-service model adoption. Return a score 0-2 (no extra text).",
+        "ai_criteria": "Evaluate 1) tier 2 supplier practices, 2) product-as-a-service models. Return 0-2 (no text).",
         "max_subtotal": 10
     },
     {
@@ -105,11 +106,11 @@ DIMENSIONS = [
         "name": "Sustainable Procurement (SDG 12.7)",
         "weight": 0.08,
         "actions": [
-            {"name": "procurement_criteria_count", "desc": "Sustainability criteria in procurement policy", "calc": lambda x: 3 if x >=3 else 1 if x >=1 else 0},
+            {"name": "procurement_criteria_count", "desc": "Sustainability criteria in procurement (e.g., GSK's EcoVadis)", "calc": lambda x: 3 if x >=3 else 1 if x >=1 else 0},
             {"name": "sustainable_budget_pct", "desc": "Procurement budget for sustainable goods (%)", "calc": lambda x: 3 if x >=30 else 1 if x >=10 else 0},
-            {"name": "procurement_tracking", "desc": "Tracking of sustainable procurement performance", "calc": lambda x: 2 if x else 0}
+            {"name": "procurement_tracking", "desc": "Tracking sustainable procurement performance", "calc": lambda x: 2 if x else 0}
         ],
-        "ai_criteria": "Evaluate 1) supplier diversity in sustainable procurement, 2) alignment with ISO 20400. Return a score 0-2 (no extra text).",
+        "ai_criteria": "Evaluate 1) supplier diversity, 2) ISO 20400 alignment. Return 0-2 (no text).",
         "max_subtotal": 8
     },
     {
@@ -117,11 +118,11 @@ DIMENSIONS = [
         "name": "Life-Cycle Thinking (SDG 12.8)",
         "weight": 0.05,
         "actions": [
-            {"name": "lca_product_pct", "desc": "Product lines with Life-Cycle Assessment (%)", "calc": lambda x: 2 if x >=50 else 1 if x >=20 else 0},
-            {"name": "consumer_comm", "desc": "Sustainability info communicated to consumers", "calc": lambda x: 2 if x else 0},
-            {"name": "lca_improvements", "desc": "Product improvements from LCA insights", "calc": lambda x: 1 if x >=2 else 0.5 if x >=1 else 0}
+            {"name": "lca_product_pct", "desc": "Products with Life-Cycle Assessment (%)", "calc": lambda x: 2 if x >=50 else 1 if x >=20 else 0},
+            {"name": "consumer_comm", "desc": "Sustainability info for consumers", "calc": lambda x: 2 if x else 0},
+            {"name": "lca_improvements", "desc": "Product improvements from LCA (e.g., GSK's inhaler redesign)", "calc": lambda x: 1 if x >=2 else 0.5 if x >=1 else 0}
         ],
-        "ai_criteria": "Evaluate 1) inclusion of scope 3 emissions in LCA, 2) consumer engagement with eco-labels. Return a score 0-1 (no extra text).",
+        "ai_criteria": "Evaluate 1) scope 3 emissions in LCA, 2) eco-label engagement. Return 0-1 (no text).",
         "max_subtotal": 5
     },
     {
@@ -131,9 +132,9 @@ DIMENSIONS = [
         "actions": [
             {"name": "food_waste_reduction_pct", "desc": "Food/by-product waste reduction vs. baseline (%)", "calc": lambda x: 3 if x >=40 else 1 if x >=20 else 0},
             {"name": "segregation_rate_pct", "desc": "Waste segregation rate (%)", "calc": lambda x: 3 if x >=90 else 1 if x >=60 else 0},
-            {"name": "circular_partnerships", "desc": "Partnerships with circular waste startups", "calc": lambda x: 1 if x else 0}
+            {"name": "circular_partnerships", "desc": "Partnerships for circularity (e.g., GSK's WOTR water project)", "calc": lambda x: 1 if x else 0}
         ],
-        "ai_criteria": "Evaluate 1) purity of recycled waste streams, 2) revenue from by-product utilization. Return a score 0-2 (no extra text).",
+        "ai_criteria": "Evaluate 1) recycled waste purity, 2) by-product revenue. Return 0-2 (no text).",
         "max_subtotal": 7
     },
     {
@@ -145,312 +146,255 @@ DIMENSIONS = [
             {"name": "eco_tourism_pct", "desc": "Eco-tourism practices coverage (%)", "calc": lambda x: 3 if x >=60 else 1 if x >=30 else 0},
             {"name": "energy_water_efficiency", "desc": "Energy/water use ≤30% of industry average", "calc": lambda x: 1 if x else 0}
         ],
-        "ai_criteria": "Evaluate 1) community impact of projects, 2) durability of infrastructure materials. Return a score 0-2 (no extra text).",
+        "ai_criteria": "Evaluate 1) community impact, 2) infrastructure durability. Return 0-2 (no text).",
         "max_subtotal": 7,
-        "industries": ["Tourism", "Hospitality", "Infrastructure"]  # Only show for these industries
+        "industries": ["Tourism", "Hospitality", "Infrastructure"]
     }
 ]
 
-# --- Core AI Functions ---
-def get_ai_response(prompt, system_msg="You are an ESG expert. Be concise."):
+# --- Core AI Functions (Optimized for GSK Report) ---
+def get_ai_response(prompt, system_msg="You are an ESG expert specializing in pharmaceutical/industrial sustainability. Be concise."):
     if not OPENAI_AVAILABLE:
-        return "❌ AI features require an OPENAI_API_KEY in Streamlit Secrets."
+        return "❌ AI requires OPENAI_API_KEY in Streamlit Secrets."
     
     try:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "system", "content": system_msg}, {"role": "user", "content": prompt}],
-            temperature=0.4,
-            timeout=20
+            temperature=0.3,  # Lower temp for precise data extraction
+            timeout=30  # Longer timeout for GSK's large text
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
         st.error(f"⚠️ AI error: {str(e)}")
         return None
 
-def ai_extract_esg_data(pdf_text):
-    """Extract production-related data from ESG report text with improved terminology handling."""
-    if not pdf_text:
-        return {}
+def extract_pdf_text(uploaded_file):
+    """Extract FULL text from GSK 2023 ESG Report + isolate key SDG 12 chapters"""
+    try:
+        with fitz.open(stream=uploaded_file.read(), filetype="pdf") as pdf_doc:
+            full_text = ""
+            section_text = {
+                "environment": "",  # GSK's "Environment" chapter (pages 18-25)
+                "procurement": "",  # GSK's "Sustainable Procurement" (Ethical Standards)
+                "circular_economy": ""  # GSK's circular initiatives (Environment/Access)
+            }
+            
+            # GSK report uses consistent headers—target SDG 12-relevant sections
+            current_section = None
+            for page_num, page in enumerate(pdf_doc):
+                page_text = page.get_text().strip()
+                full_text += f"\n--- Page {page_num + 1} ---\n" + page_text
+                
+                # Identify GSK's key chapters (case-insensitive for consistency)
+                if "environment" in page_text.lower() and "climate change" in page_text.lower():
+                    current_section = "environment"
+                elif "sustainable procurement" in page_text.lower() or "supplier" in page_text.lower() and "ecovadis" in page_text.lower():
+                    current_section = "procurement"
+                elif "circular economy" in page_text.lower() or "take-back" in page_text.lower() or "packaging" in page_text.lower():
+                    current_section = "circular_economy"
+                elif "chapter" in page_text.lower() and any(chapter in page_text.lower() for chapter in ["access", "dei", "ethical standards"]):
+                    current_section = None  # Exit when non-SDG 12 chapters start
+                
+                # Append text to current section (avoid duplicate headers)
+                if current_section and page_text:
+                    section_text[current_section] += page_text + "\n"
+            
+            # Store for later use (reduce AI processing time)
+            st.session_state["production_data"]["extracted_sections"] = section_text
+            return full_text[:50000]  # Cap at 50k chars (covers GSK's key SDG 12 sections)
+    except Exception as e:
+        st.error(f"⚠️ GSK PDF extraction failed: {str(e)} (report may be password-protected)")
+        return ""
+
+def ai_extract_esg_data():
+    """Extract SDG 12 data from GSK's pre-isolated sections (faster + more accurate)"""
+    data = st.session_state["production_data"]
+    section_text = data["extracted_sections"]
     
-    # Explicit terminology map to help AI recognize synonyms for key metrics
-    terminology_map = """
-    Key Metrics & Synonyms to Recognize:
-    - Renewable energy percentage: "solar/wind energy占比", "可再生能源使用比例", "green energy share", "清洁能源占比"
-    - Energy-efficient tech categories: "节能技术数量", "energy-saving technologies", "高效能设备种类", "节能设备数量"
-    - Water reuse rate: "水资源循环利用率", "water recycling percentage", "中水回用率", "水循环利用比例"
-    - Recycled material percentage: "再生材料占比", "recycled content", "回收原料使用率", "循环材料比例"
-    - Waste intensity vs industry average: "单位产值废弃物强度", "waste per unit output vs peers", "废物强度行业对比", "单位产品废弃物排放量"
-    - Eco-design certification: "生态设计认证", "environmental design certification", "绿色产品认证", "环保设计认证"
-    - Hazardous chemical reduction: "危险化学品削减率", "hazardous substances reduction", "有害化学物质减排", "危险废物减少比例"
-    - Waste recycling rate: "废弃物回收率", "production waste recycled", "废料再利用率", "垃圾回收比例"
-    - Chemical compliance: "化学品合规性", "REACH/Stockholm Convention compliance", "化学品管理达标", "符合化学品公约要求"
+    # Prioritize GSK's "Environment" section (richest SDG 12 data)
+    target_text = ""
+    if section_text["environment"]:
+        target_text += f"[Environment Section]\n{section_text['environment'][:15000]}\n"
+    if section_text["procurement"]:
+        target_text += f"[Procurement Section]\n{section_text['procurement'][:10000]}\n"
+    if section_text["circular_economy"]:
+        target_text += f"[Circular Economy Section]\n{section_text['circular_economy'][:10000]}\n"
+    
+    if not target_text:
+        target_text = data["extracted_pdf_text"][:30000]  # Fallback to full text if sections not found
+    
+    # GSK-specific terminology map (critical for accurate extraction)
+    gsk_terminology = """
+    GSK-Specific Terms to Map to SDG 12 Metrics:
+    - "Imported renewable electricity %": renewable_energy_pct
+    - "Water use reduction vs 2020 baseline": water_reuse_pct
+    - "Low-carbon Ventolin": eco_design_cert (true) + lca_improvements (count)
+    - "Waste recovered via circular routes": waste_recycling_pct
+    - "AMR Alliance wastewater compliance": chemical_compliance (true)
+    - "Deforestation-free paper packaging": packaging_sustainable_pct
+    - "Sustainably certified palm oil": certified_supplier_pct
+    - "EcoVadis supplier score": sustainable_procurement → procurement_criteria_count
+    - "LCA for products": lca_product_pct
     """
     
-    prompt = f"""Extract the following data from this ESG report excerpt (return ONLY valid JSON, no extra text).
-    Use the terminology map below to recognize synonyms for metrics:
-    {terminology_map}
+    prompt = f"""Extract SDG 12 production metrics from this GSK ESG Report text. Use the terminology map below to match GSK terms to metrics.
+    {gsk_terminology}
     
+    Return ONLY valid JSON (no extra text). Use null for missing data.
     {{
-        "company_name": "Company name (string)",
-        "industry": "Industry (Manufacturing/Tourism/Hospitality/Infrastructure/Other)",
+        "company_name": "Extract company name (should be GSK PLC)",
+        "industry": "Pharmaceuticals (fixed for GSK)",
         "resource_efficiency": {{
-            "renewable_energy_pct": "Renewable energy percentage (number, 0-100; return null if not found)",
-            "energy_tech_count": "Number of energy-efficient tech categories (number, 0+; return null if not found)",
-            "water_reuse_pct": "Water reuse rate (number, 0-100; return null if not found)"
+            "renewable_energy_pct": "Renewable electricity % (e.g., 83%)",
+            "energy_tech_count": "Number of energy-efficient tech (solar, wind, heat recovery)",
+            "water_reuse_pct": "Water reduction vs baseline % (e.g., 24%)"
         }},
         "sustainable_production": {{
-            "recycled_material_pct": "Recycled raw material percentage (number, 0-100; return null if not found)",
-            "waste_intensity_pct": "Waste intensity vs industry average (number, 0+; return null if not found)",
-            "eco_design_cert": "Eco-design certification (true/false/null if not found)"
+            "recycled_material_pct": "Recycled material % (e.g., paper packaging)",
+            "waste_intensity_pct": "Waste intensity vs industry average %",
+            "eco_design_cert": "Low-carbon products (Ventolin) or eco-design cert (true/false)"
         }},
         "chemical_waste": {{
-            "hazardous_reduction_pct": "Hazardous chemical reduction vs baseline (number, 0-100; return null if not found)",
-            "waste_recycling_pct": "Production waste recycling rate (number, 0-100; return null if not found)",
-            "chemical_compliance": "Compliance with REACH/Stockholm Convention (true/false/null if not found)"
+            "hazardous_reduction_pct": "Hazardous chemical reduction %",
+            "waste_recycling_pct": "Waste recycling/circular recovery % (e.g., 53%)",
+            "chemical_compliance": "AMR Alliance/REACH compliance (true/false)"
         }},
         "circular_economy": {{
-            "takeback_program_pct": "Product lines with take-back programs (number, 0-100; return null if not found)",
-            "packaging_sustainable_pct": "Sustainable packaging percentage (number, 0-100; return null if not found)",
-            "certified_supplier_pct": "Certified sustainable suppliers (number, 0-100; return null if not found)"
+            "takeback_program_pct": "Product take-back program %",
+            "packaging_sustainable_pct": "Deforestation-free packaging % (e.g., 86%)",
+            "certified_supplier_pct": "Sustainable suppliers % (e.g., 98% palm oil)"
         }},
         "sustainable_procurement": {{
-            "procurement_criteria_count": "Sustainability criteria in procurement (number, 0+; return null if not found)",
-            "sustainable_budget_pct": "Procurement budget for sustainable goods (number, 0-100; return null if not found)",
-            "procurement_tracking": "Tracking sustainable procurement (true/false/null if not found)"
+            "procurement_criteria_count": "Sustainability criteria (EcoVadis, carbon targets)",
+            "sustainable_budget_pct": "Sustainable procurement budget %",
+            "procurement_tracking": "Supplier ESG tracking (true/false)"
         }},
         "life_cycle_thinking": {{
-            "lca_product_pct": "Products with Life-Cycle Assessment (number, 0-100; return null if not found)",
-            "consumer_comm": "Sustainability info for consumers (true/false/null if not found)",
-            "lca_improvements": "Product improvements from LCA (number, 0+; return null if not found)"
+            "lca_product_pct": "Products with LCA %",
+            "consumer_comm": "Sustainability info for consumers (true/false)",
+            "lca_improvements": "Product improvements from LCA (e.g., inhaler redesign)"
         }},
         "waste_management": {{
-            "food_waste_reduction_pct": "Food/by-product waste reduction (number, 0-100; return null if not found)",
-            "segregation_rate_pct": "Waste segregation rate (number, 0-100; return null if not found)",
-            "circular_partnerships": "Partnerships with circular startups (true/false/null if not found)"
-        }},
-        "tourism_infrastructure": {{
-            "sustainable_material_pct": "Sustainable building materials (number, 0-100; return null if not found)",
-            "eco_tourism_pct": "Eco-tourism practice coverage (number, 0-100; return null if not found)",
-            "energy_water_efficiency": "Energy/water use ≤30% industry average (true/false/null if not found)"
+            "food_waste_reduction_pct": "Food/by-product waste reduction %",
+            "segregation_rate_pct": "Waste segregation %",
+            "circular_partnerships": "Circular partnerships (e.g., WOTR water project) (true/false)"
         }}
     }}
     
-    PDF Text (expanded excerpt): {pdf_text[:5000]}  # Increased context for better extraction
+    GSK Report Text: {target_text}
     """
     
-    response = get_ai_response(prompt, system_msg="You are a precise data extractor. Map report terminology to the requested metrics using the provided synonyms. Return ONLY valid JSON.")
+    response = get_ai_response(prompt, system_msg="You extract ESG data from pharmaceutical reports. Return ONLY valid JSON—no explanations.")
     if not response:
         return {}
     
     try:
         extracted_data = json.loads(response)
-        
-        # Validate and flag missing fields for user feedback
-        missing_fields = []
-        for dim_name, dim_values in extracted_data.items():
-            if isinstance(dim_values, dict):  # Check nested metrics
-                for metric, value in dim_values.items():
-                    if value is None:
-                        missing_fields.append(f"{dim_name} → {metric}")
-        
-        # Show user which metrics were found/missing
-        if missing_fields:
-            with st.sidebar.expander("⚠️ Partial Data Extraction", expanded=True):
-                st.info(f"Found {len(extracted_data.keys()) - len(missing_fields)} metrics. Missing:\n" + "\n".join(missing_fields[:5]) + ("..." if len(missing_fields) > 5 else ""))
-        else:
-            st.sidebar.success("✅ All metrics extracted successfully!")
-        
+        # Validate GSK-specific fields (e.g., industry should be Pharmaceuticals)
+        if extracted_data.get("industry") != "Pharmaceuticals":
+            extracted_data["industry"] = "Pharmaceuticals"
         return extracted_data
-    
     except json.JSONDecodeError:
-        st.sidebar.error(f"⚠️ Failed to parse PDF data. Please enter data manually.")
+        st.sidebar.error(f"⚠️ Failed to parse GSK data. Raw AI response: {response[:200]}...")
         return {}
-def manual_pdf_mapping(pdf_text):
-    """Let users manually select PDF text snippets for missing metrics."""
-    st.sidebar.subheader("📌 Manual PDF Metric Mapping")
-    st.sidebar.info("Select text from the PDF that contains the missing metrics:")
-    
-    # Show truncated PDF text with line numbers for reference
-    pdf_lines = [f"Line {i+1}: {line[:100]}..." for i, line in enumerate(pdf_text.split('\n')) if line.strip()]
-    selected_line = st.sidebar.selectbox("Find relevant line in PDF:", pdf_lines, index=0)
-    
-    # Extract actual text from selected line
-    if selected_line:
-        line_text = pdf_text.split('\n')[int(selected_line.split(":")[0].split()[1])-1].strip()
-        st.sidebar.text(f"Selected text: {line_text[:150]}...")
-        
-        # Let user map this text to a missing metric
-        missing_metrics = [
-            "resource_efficiency → renewable_energy_pct",
-            "resource_efficiency → energy_tech_count",
-            "resource_efficiency → water_reuse_pct",
-            "sustainable_production → recycled_material_pct",
-            "sustainable_production → waste_intensity_pct",
-            "sustainable_production → eco_design_cert",
-            "chemical_waste → hazardous_reduction_pct",
-            "chemical_waste → waste_recycling_pct",
-            "chemical_waste → chemical_compliance"
-        ]
-        
-        target_metric = st.sidebar.selectbox("Map this text to which metric?", missing_metrics)
-        if st.sidebar.button("Extract from this line", key="manual_extract"):
-            # Use AI to extract the specific metric from the selected line
-            dim_id, metric = target_metric.split(" → ")
-            prompt = f"""Extract the numeric value (or true/false) for {metric} from this text: "{line_text}".
-            Return ONLY the value (number, true, or false) with no explanation."""
-            
-            value = get_ai_response(prompt, system_msg="You are a data extractor. Return ONLY the requested value.")
-            if value:
-                try:
-                    # Convert to appropriate type
-                    if value.lower() in ["true", "false"]:
-                        parsed_value = value.lower() == "true"
-                    else:
-                        parsed_value = float(value)
-                    
-                    # Update session state
-                    st.session_state["production_data"][dim_id][metric] = parsed_value
-                    st.sidebar.success(f"✅ Updated {target_metric} to {parsed_value}")
-                    st.session_state["rerun_trigger"] = True
-                except ValueError:
-                    st.sidebar.error(f"Could not parse '{value}' as a number/boolean. Try another line.")
-                    
+
 def ai_evaluate_unlisted_criteria(dimension):
-    """Evaluate AI-only criteria for a dimension."""
-    data = st.session_state["production_data"][dimension["id"]]
-    prompt = f"""Evaluate the following for {dimension['name']}:
-    - Company Data: {data}
-    - Evaluation Criteria: {dimension['ai_criteria']}
-    Return ONLY the numeric score (no text, no units)."""
+    """Evaluate AI-only criteria (uses GSK's section text for context)"""
+    data = st.session_state["production_data"]
+    dim_data = data[dimension["id"]]
+    section_text = data["extracted_sections"].get(dimension["id"], "")
     
-    response = get_ai_response(prompt, system_msg="You are an ESG analyst. Return ONLY a number.")
+    prompt = f"""Evaluate {dimension['name']} for GSK:
+    - Company Data: {dim_data}
+    - GSK Report Context: {section_text[:2000]}  # Use relevant section
+    - Criteria: {dimension['ai_criteria']}
+    Return ONLY the numeric score (0-5, no text)."""
+    
+    response = get_ai_response(prompt, system_msg="You analyze pharmaceutical ESG performance. Return ONLY a number.")
     if not response:
         return 0
-    
     try:
-        return max(0, min(5, float(response.strip())))  # Cap at 5 to prevent overscoring
+        return max(0, min(5, float(response.strip())))
     except (ValueError, TypeError):
         st.warning(f"⚠️ Invalid AI score for {dimension['name']}. Defaulting to 0.")
         return 0
 
 def ai_generate_recommendations():
-    """Generate tailored improvement recommendations based on scores."""
-    data = st.session_state["production_data"]
-    scores = data["dimension_scores"]  # Format: {dim_id: {"weighted_score": X, ...}, ...}
-    company_industry = data["Industry"]
-    
-    # Identify low-performing dimensions (score <50% of max possible weighted score)
-    low_dimensions = []
-    for dim in DIMENSIONS:
-        # Skip tourism dimension if industry is not relevant
-        if dim["id"] == "tourism_infrastructure" and company_industry not in dim["industries"]:
-            continue
-        
-        # Get weighted score (default to 0 if missing)
-        dim_score = scores.get(dim["id"], {}).get("weighted_score", 0)
-        # Calculate 50% of max possible weighted score
-        max_weighted_threshold = (dim["max_subtotal"] * dim["weight"]) * 0.5
-        
-        if dim_score < max_weighted_threshold:
-            low_dimensions.append(dim["name"])
-    
-    # Fallback if no low dimensions identified
-    if not low_dimensions:
-        low_dimensions = ["Resource Efficiency (SDG 12.2)", "Circular Economy Integration (SDG 12.5)"]
-    
-    prompt = f"""Generate 3 specific, actionable sustainability recommendations for {data['Company Name']} (Industry: {data['Industry']}).
-    Focus on their low-performing areas: {low_dimensions}.
-    Each recommendation must:
-    1. Reference a specific SDG 12 target (e.g., SDG 12.2 for resource efficiency).
-    2. Include a measurable goal (e.g., "Increase renewable energy to 50% by 2026").
-    3. Explain why it matters (e.g., "Reduces carbon footprint by 30%").
-    Do NOT use bullet points—number each recommendation (1., 2., 3.)."""
-    
-    response = get_ai_response(prompt, system_msg="You are a sustainability consultant. Be specific and actionable.")
-    
-    # Fallback recommendations if AI fails
-    if not response:
-        return [
-            "1. Increase renewable energy adoption to 50% by 2026 (SDG 12.2) – Reduces reliance on fossil fuels and cuts carbon emissions by 30%.",
-            "2. Expand product take-back programs to cover 50% of product lines (SDG 12.5) – Enhances circularity and reduces end-of-life waste by 25%.",
-            "3. Implement eco-design certifications for all core products (SDG 12.3) – Improves product recyclability and aligns with global sustainability standards."
-        ]
-    
-    # Clean and format recommendations
-    return [line.strip() for line in response.split("\n") if line.strip() and line.strip()[0].isdigit()]
-
-def ai_generate_mock_esg():
-    """Generate a project-focused mock ESG excerpt (mimicking real reports)."""
+    """Generate GSK-aligned recommendations (focus on pharma-specific actions)"""
     data = st.session_state["production_data"]
     scores = data["dimension_scores"]
     company_industry = data["Industry"]
     
-    # Extract key metrics for project context
-    renewable_pct = data["resource_efficiency"]["renewable_energy_pct"]
-    recycled_mat_pct = data["sustainable_production"]["recycled_material_pct"]
-    waste_recycling_pct = data["chemical_waste"]["waste_recycling_pct"]
-    water_reuse_pct = data["resource_efficiency"]["water_reuse_pct"]
+    # Identify low-performing dimensions (GSK's SDG 12 focus areas)
+    low_dimensions = []
+    for dim in DIMENSIONS:
+        if dim["id"] == "tourism_infrastructure" and company_industry not in dim["industries"]:
+            continue
+        dim_score = scores.get(dim["id"], {}).get("weighted_score", 0)
+        max_threshold = (dim["max_subtotal"] * dim["weight"]) * 0.5
+        if dim_score < max_threshold:
+            low_dimensions.append(dim["name"])
     
-    # Identify 1-2 high-impact projects based on strong metrics
-    projects = []
-    if renewable_pct >= 40:
-        projects.append(f"onsite solar installation (completed Q2 2024)")
-    if recycled_mat_pct >= 30:
-        projects.append(f"closed-loop material recycling program (launched 2023)")
-    if water_reuse_pct >= 50:
-        projects.append(f"water reclamation system upgrade (operational since Jan 2024)")
+    if not low_dimensions:
+        low_dimensions = ["Resource Efficiency (SDG 12.2)", "Circular Economy (SDG 12.5)"]
     
-    # Default project if no strong metrics
-    if not projects:
-        projects = [f"pilot sustainable procurement initiative (initiated Q3 2024)"]
+    prompt = f"""Generate 3 pharma-specific recommendations for {data['Company Name']} (Industry: {company_industry}).
+    Focus on low areas: {low_dimensions}.
+    Each recommendation must:
+    1. Link to SDG 12 (e.g., SDG 12.3 for product design).
+    2. Include measurable pharma actions (e.g., "Expand low-carbon inhaler production").
+    3. Explain impact (e.g., "Reduces Scope 3 emissions by 40%").
+    Number recommendations (1., 2., 3.)—no bullets."""
     
-    prompt = f"""Write a 300-500 word excerpt from an ESG report for {data['Company Name']} (Industry: {company_industry}). 
-    Focus EXCLUSIVELY on a specific sustainability project/action (not company overview) that demonstrates progress toward SDG 12. 
-    Follow these rules:
-    1. Open with the project name and timeline (e.g., "In 2024, we expanded our waste recycling program...").
-    2. Include 3+ specific metrics (e.g., "reduced hazardous waste by 27%", "15,000 tons of recycled material reused").
-    3. Link directly to 1+ SDG 12 targets (e.g., SDG 12.2 for resource efficiency, SDG 12.5 for circular economy).
-    4. Mention challenges (e.g., "initial supplier resistance") and mitigation (e.g., "partnered with 3 local recyclers").
-    5. Add forward-looking data (e.g., "targeting 45% renewable energy by 2026").
-    6. Use formal, concise language (avoid jargon; mimic tone of Unilever/Apple ESG reports).
-    7. Do NOT reintroduce the company or its mission—assume readers know this from earlier sections.
-    
-    Key metrics to reference:
-    - Renewable energy: {renewable_pct}% of production needs
-    - Recycled materials: {recycled_mat_pct}% in core products
-    - Waste recycling: {waste_recycling_pct}% of production waste
-    - Featured project examples: {', '.join(projects)}"""
-    
-    # Realistic fallback excerpt (mimicking Apple/Unilever reports)
-    fallback = f"""In 2024, {data['Company Name']} scaled its closed-loop material recycling program across three manufacturing facilities, building on the success of our 2023 pilot. The initiative, aligned with SDG 12.5 (substantially reduce waste generation), focused on reclaiming post-production plastic scrap and reprocessing it for use in new product components.
+    response = get_ai_response(prompt, system_msg="You are a pharmaceutical sustainability consultant. Be specific.")
+    if not response:
+        return [
+            "1. Expand renewable electricity to 100% by 2026 (SDG 12.2) – Reduces Scope 2 emissions by 50% (aligns with GSK's targets).",
+            "2. Increase sustainable packaging to 95% by 2027 (SDG 12.5) – Cuts plastic waste by 35% in pharmaceutical supply chains.",
+            "3. Require 100% of high-risk suppliers to have science-based targets by 2025 (SDG 12.7) – Lowers supply chain emissions by 25%."
+        ]
+    return [line.strip() for line in response.split("\n") if line.strip() and line.strip()[0].isdigit()]
 
-During the reporting period, the program diverted 1,240 metric tons of plastic from landfills—equivalent to 32% of total production waste—representing a 17% increase from 2023. Of this, 890 metric tons (72% of reclaimed material) was reused in our core product line, reducing virgin plastic procurement by {recycled_mat_pct}% and lowering carbon emissions by 1,850 tons (due to reduced transportation of raw materials).
-
-Implementation challenges included inconsistent scrap quality, which initially limited reuse rates to 58%. To address this, we partnered with two third-party recycling specialists to upgrade sorting equipment, increasing usable output by 24% within six months.
-
-Looking ahead, we aim to expand the program to all five manufacturing sites by 2026, targeting 45% of production waste recycling (up from current {waste_recycling_pct}%) and 50% recycled material content in core products—directly contributing to SDG 12.3 (halve per capita global food waste) and our broader 2030 carbon neutrality commitment."""
+def ai_generate_mock_esg():
+    """Generate GSK-style ESG excerpt (pharma-specific, project-focused)"""
+    data = st.session_state["production_data"]
+    scores = data["dimension_scores"]
     
-    return get_ai_response(prompt, system_msg="You are an ESG report writer. Mimic the concise, data-heavy style of Fortune 500 ESG reports.") or fallback
+    # Use GSK's section text for realistic context
+    env_text = data["extracted_sections"].get("environment", "")[:500]
+    high_dims = [dim["name"] for dim in DIMENSIONS if scores.get(dim["id"], {}).get("weighted_score", 0) > (dim["max_subtotal"] * dim["weight"]) * 0.7]
+    low_dims = [dim["name"] for dim in DIMENSIONS if scores.get(dim["id"], {}).get("weighted_score", 0) < (dim["max_subtotal"] * dim["weight"]) * 0.5]
+    
+    prompt = f"""Write a 300-500 word GSK-style ESG excerpt for {data['Company Name']} (Industry: {data['Industry']}).
+    Include:
+    1. A specific project (e.g., low-carbon product, water reuse).
+    2. GSK-like metrics: renewable energy ({data['resource_efficiency']['renewable_energy_pct']}%), waste recycling ({data['chemical_waste']['waste_recycling_pct']}%), sustainable packaging ({data['circular_economy']['packaging_sustainable_pct']}%).
+    3. Strengths: {high_dims if high_dims else ['Sustainable procurement']}.
+    4. Improvements: {low_dims if low_dims else ['Resource efficiency']}.
+    5. Future goal tied to SDG 12 (e.g., "2030 net-zero production").
+    Use formal pharma ESG tone (avoid jargon). Do NOT introduce the company.
+    
+    GSK Context Reference: {env_text}"""
+    
+    fallback = f"""In 2024, {data['Company Name']} advanced its low-carbon production initiative, building on progress in sustainable manufacturing. The project, aligned with SDG 12.3 (sustainable production patterns), focused on optimizing solvent recovery and scaling recycled packaging for pharmaceutical products. 
 
-# --- Helper Functions ---
-def extract_pdf_text(uploaded_file):
-    """Extract text from uploaded PDF."""
-    try:
-        with fitz.open(stream=uploaded_file.read(), filetype="pdf") as pdf_doc:
-            return "\n\n".join([page.get_text().strip() for page in pdf_doc])
-    except Exception as e:
-        st.error(f"⚠️ PDF extraction failed: {str(e)}")
-        return ""
+    During the year, the initiative reduced production waste intensity by {data['sustainable_production']['waste_intensity_pct']}% vs. the industry average, while 86% of paper packaging was sourced from deforestation-free suppliers—exceeding the 2024 target of 80%. Renewable electricity accounted for {data['resource_efficiency']['renewable_energy_pct']}% of total consumption, supported by on-site solar installations at three manufacturing sites. 
 
+    Key strengths included chemical waste management (100% compliance with AMR Alliance discharge limits) and sustainable procurement (89% of high-risk suppliers met EcoVadis thresholds). Areas for improvement included water reuse (currently {data['resource_efficiency']['water_reuse_pct']}%, below the 40% target) and product take-back programs (covering just 20% of product lines). 
+
+    Looking ahead, the company aims to achieve 90% recycled packaging by 2026 (SDG 12.5) and expand water reuse systems to all high-stress sites—aligning with its broader 2030 commitment to circular production."""
+    
+    return get_ai_response(prompt, system_msg="You write pharmaceutical ESG excerpts. Mimic GSK's formal, data-heavy style.") or fallback
+
+# --- Helper Functions (GSK Compatibility) ---
 def calculate_dimension_scores():
-    """Calculate scores for each dimension (including AI unlisted criteria)."""
+    """Calculate scores (uses GSK's section text for AI evaluation)"""
     data = st.session_state["production_data"]
     dimension_scores = {}
     total_score = 0
     
     for dim in DIMENSIONS:
-        # Skip tourism dimension if industry is irrelevant
         if dim["id"] == "tourism_infrastructure" and data["Industry"] not in dim["industries"]:
             continue
         
@@ -458,12 +402,12 @@ def calculate_dimension_scores():
         dim_data = data[dim["id"]]
         action_subtotal = sum([action["calc"](dim_data[action["name"]]) for action in dim["actions"]])
         
-        # Add AI score (ensure it doesn't exceed max subtotal)
+        # Add AI score (uses GSK's section text for context)
         ai_score = ai_evaluate_unlisted_criteria(dim) if OPENAI_AVAILABLE else 0
         dim_data["ai_score"] = ai_score
         total_subtotal = min(dim["max_subtotal"], action_subtotal + ai_score)
         
-        # Calculate weighted score (contribution to total 100)
+        # Weighted score (total = 100)
         weighted_score = round(total_subtotal * dim["weight"], 1)
         dimension_scores[dim["id"]] = {
             "name": dim["name"],
@@ -473,31 +417,29 @@ def calculate_dimension_scores():
         }
         total_score += weighted_score
     
-    # Update session state
     data["dimension_scores"] = dimension_scores
     data["total_score"] = round(total_score, 1)
     st.session_state["production_data"] = data
 
 def generate_report_content():
-    """Generate text content for TXT/PDF reports."""
+    """Generate GSK-style report content"""
     data = st.session_state["production_data"]
     scores = data["dimension_scores"]
     
-    # Header
     content = f"SDG 12 Production Responsibility Report\n"
     content += f"Company: {data['Company Name']}\n"
     content += f"Industry: {data['Industry']}\n"
     content += f"Total Score: {data['total_score']}/100\n"
     content += "="*50 + "\n\n"
     
-    # Dimension Breakdown
-    content += "1. Dimension Score Breakdown\n"
+    # Dimension Breakdown (GSK-like structure)
+    content += "1. SDG 12 Dimension Breakdown\n"
     for dim_id, dim_data in scores.items():
-        content += f"- {dim_data['name']}: {dim_data['weighted_score']}/{dim_data['max_weighted']} (Subtotal: {dim_data['subtotal']}/{DIMENSIONS[[d['id'] for d in DIMENSIONS].index(dim_id)]['max_subtotal']})\n"
+        content += f"- {dim_data['name']}: {dim_data['weighted_score']}/{dim_data['max_weighted']}\n"
     
-    # Key Metrics
-    content += "\n2. Key Production Metrics\n"
-    core_dims = ["resource_efficiency", "sustainable_production", "chemical_waste", "circular_economy"]
+    # Key Metrics (Pharma Focus)
+    content += "\n2. Key Pharmaceutical Production Metrics\n"
+    core_dims = ["resource_efficiency", "sustainable_production", "chemical_waste"]
     for dim_id in core_dims:
         if dim_id not in data:
             continue
@@ -507,105 +449,84 @@ def generate_report_content():
         for action in [a for a in DIMENSIONS[[d["id"] for d in DIMENSIONS].index(dim_id)]["actions"]]:
             content += f"  - {action['desc']}: {dim_data[action['name']]}\n"
     
-    # Recommendations
+    # Recommendations + Mock Excerpt
     content += "\n3. Improvement Recommendations\n"
     recommendations = ai_generate_recommendations() if OPENAI_AVAILABLE else data["ai_recommendations"]
-    data["ai_recommendations"] = recommendations
     for i, rec in enumerate(recommendations, 1):
         content += f"{i}. {rec}\n"
     
-    # Mock ESG Excerpt
-    content += "\n4. Mock ESG Report Excerpt\n"
+    content += "\n4. Mock ESG Excerpt (GSK Style)\n"
     mock_excerpt = ai_generate_mock_esg() if OPENAI_AVAILABLE else data["mock_esg_excerpt"]
-    data["mock_esg_excerpt"] = mock_excerpt
     content += mock_excerpt + "\n"
     
     return content, recommendations, mock_excerpt
 
-# --- ESG Report Writing Recommendations ---
+# --- ESG Report Writing Guidelines (GSK Example) ---
 def display_writing_recommendations():
-    st.subheader("✏️ ESG Report Writing Guidelines (SDG 12 Focus)")
+    st.subheader("✏️ ESG Report Writing Guidelines (GSK Example Reference)")
     st.markdown("""
-    Use these best practices to draft credible, impactful ESG report sections focused on production sustainability:
+    Use GSK’s 2023 ESG Report as a template for SDG 12 sections:
     
-    ### 1. Focus on Specific Projects (Not General Claims)
-    - **Bad**: "We improved resource efficiency."  
-    - **Good**: "In 2024, we installed a water reclamation system at our Detroit plant, reducing freshwater use by 40M gallons/year (32% of total consumption)."  
+    ### 1. Focus on Pharma-Specific Projects
+    - **GSK Example**: "Low-carbon Ventolin inhaler (90% emissions reduction) – Phase III trials in 2024"  
+    - **Your Report**: Highlight product redesigns, API waste reduction, or sustainable packaging for pharmaceuticals.
 
-    ### 2. Anchor Metrics to Context
-    Always include:  
-    - Baseline comparisons (e.g., "up from 18% in 2022")  
-    - Industry benchmarks (e.g., "exceeds sector average of 22%")  
-    - Future targets (e.g., "targeting 50% by 2026")  
+    ### 2. Link Metrics to Baselines/Targes
+    - **GSK Example**: "Water use reduced by 24% vs. 2020 baseline (11% in high-stress regions)"  
+    - **Your Report**: Include year-over-year changes (e.g., "Waste recycling up from 45% in 2022 to 53% in 2023").
 
-    ### 3. Explicitly Link to SDG 12 Targets
-    Specify which target your action supports:  
-    - SDG 12.2: Sustainable management of resources (energy/water efficiency)  
-    - SDG 12.5: Reduce waste generation (recycling, circular design)  
-    - SDG 12.7: Sustainable procurement (supplier standards)  
+    ### 3. Reference Industry Standards
+    - **GSK Example**: "89% of suppliers meet EcoVadis minimum score; 100% compliant with AMR Alliance limits"  
+    - **Your Report**: Cite REACH, ISO 20400, or pharma-specific standards (e.g., "Compliant with FDA’s sustainable manufacturing guidelines").
 
-    ### 4. Acknowledge Challenges
-    Build credibility by noting setbacks and solutions:  
-    - "Initial recycling rates were 15% below target due to supplier quality issues. We addressed this by launching a training program, improving rates to 85% by Q4."  
-
-    ### 5. Avoid Greenwashing Jargon
-    Replace vague terms with specifics:  
-    - Instead of "eco-friendly," use "100% renewable electricity-powered production"  
-    - Instead of "circular economy," use "90% of product components are recyclable"  
-
-    ### 6. Highlight Stakeholder Collaboration
-    Show collective impact:  
-    - "Partnered with the Ellen MacArthur Foundation to redesign 3 product lines for circularity, reducing material waste by 27%."  
+    ### 4. Be Transparent About Gaps
+    - **GSK Example**: "Supplier compliance down from 94% to 87% (expanded supplier scope)"  
+    - **Your Report**: Explain setbacks (e.g., "Water reuse below target due to delayed treatment plant installation").
     """)
 
-# --- Sidebar UI (Data Input) ---
-st.sidebar.header("📊 Data Input")
+# --- Sidebar UI (Optimized for GSK PDF) ---
+st.sidebar.header("📊 Data Input (GSK ESG Report Compatible)")
 
-# 1. PDF Upload
-st.sidebar.subheader("1. Upload ESG Report (Optional)")
-uploaded_pdf = st.sidebar.file_uploader("Upload PDF for AI Data Extraction", type="pdf")
-# Replace the existing PDF upload handling with this:
+# 1. GSK PDF Upload
+st.sidebar.subheader("1. Upload GSK 2023 ESG Report (esg-performance-report-2023.pdf)")
+uploaded_pdf = st.sidebar.file_uploader("Upload PDF", type="pdf", help="Upload GSK's 2023 ESG Report (120+ pages)")
 if uploaded_pdf:
-    with st.spinner("🔍 Extracting text from PDF..."):
+    with st.spinner("🔍 Extracting GSK's SDG 12 sections (Environment, Procurement)..."):
         pdf_text = extract_pdf_text(uploaded_pdf)
-        st.session_state["production_data"]["extracted_pdf_text"] = pdf_text
+        data = st.session_state["production_data"]
+        data["extracted_pdf_text"] = pdf_text
+        st.session_state["production_data"] = data
         
-        with st.sidebar.expander("View Extracted Text (for verification)", expanded=False):
-            st.text_area("PDF Content (first 5000 chars)", pdf_text[:5000], height=300, disabled=True)
+        # Show GSK's extracted sections (for verification)
+        with st.sidebar.expander("View Extracted GSK Sections", expanded=False):
+            section_text = data["extracted_sections"]
+            if section_text["environment"]:
+                st.text_area("Environment Section (First 2000 Chars)", section_text["environment"][:2000], height=150, disabled=True)
+            if section_text["procurement"]:
+                st.text_area("Procurement Section (First 2000 Chars)", section_text["procurement"][:2000], height=150, disabled=True)
         
+        # Extract GSK data (if AI is available)
         if OPENAI_AVAILABLE:
-            with st.spinner("🤖 Analyzing ESG data..."):
-                esg_data = ai_extract_esg_data(pdf_text)
+            with st.spinner("🤖 Extracting SDG 12 data from GSK's report..."):
+                esg_data = ai_extract_esg_data()
                 if esg_data:
-                    # Update with extracted data
+                    # Update only non-null fields (preserve manual inputs)
                     updated = False
                     for key, value in esg_data.items():
-                        if key in st.session_state["production_data"] and value is not None:
+                        if key in data and value is not None:
                             if isinstance(value, dict):
                                 for subkey, subval in value.items():
                                     if subval is not None:
-                                        st.session_state["production_data"][key][subkey] = subval
+                                        data[key][subkey] = subval
                                         updated = True
                             else:
-                                st.session_state["production_data"][key] = value
+                                data[key] = value
                                 updated = True
                     if updated:
-                        st.sidebar.success("✅ Populated available metrics from PDF!")
-                    
-                    # Check for missing metrics and offer manual mapping
-                    missing_fields = []
-                    for dim_name, dim_values in esg_data.items():
-                        if isinstance(dim_values, dict):
-                            for metric, value in dim_values.items():
-                                if value is None:
-                                    missing_fields.append(f"{dim_name} → {metric}")
-                    
-                    if missing_fields:
-                        manual_pdf_mapping(pdf_text)  # Add manual mapping tool
-                else:
-                    st.sidebar.warning("⚠️ No valid data extracted. Try manual mapping below.")
-                    manual_pdf_mapping(pdf_text)  # Show manual tool even if extraction failed
-# 2. Basic Company Info
+                        st.sidebar.success("✅ Populated GSK's SDG 12 data! Review below.")
+                        st.session_state["production_data"] = data
+
+# 2. Company Info (Neutral—No GSK Default)
 st.sidebar.subheader("2. Company Information")
 company_name = st.sidebar.text_input(
     "Company Name",
@@ -614,44 +535,40 @@ company_name = st.sidebar.text_input(
 )
 industry = st.sidebar.selectbox(
     "Industry",
-    ["Manufacturing", "Tourism", "Hospitality", "Infrastructure", "Other"],
-    index=["Manufacturing", "Tourism", "Hospitality", "Infrastructure", "Other"].index(
+    ["Pharmaceuticals", "Manufacturing", "Tourism", "Hospitality", "Infrastructure", "Other"],
+    index=["Pharmaceuticals", "Manufacturing", "Tourism", "Hospitality", "Infrastructure", "Other"].index(
         st.session_state["production_data"]["Industry"]
     ),
     key="industry"
 )
 
-# 3. Dimension-Specific Inputs
-st.sidebar.subheader("3. Production Sustainability Data")
+# 3. Dimension Inputs (Pharma-Aligned Labels)
+st.sidebar.subheader("3. SDG 12 Production Data")
 data = st.session_state["production_data"]
 
-# Render inputs for each dimension
 for dim in DIMENSIONS:
-    # Skip tourism dimension if industry is irrelevant
     if dim["id"] == "tourism_infrastructure" and industry not in dim["industries"]:
         continue
     
     st.sidebar.markdown(f"**{dim['name']}**")
     dim_data = data[dim["id"]]
     
-    # Render input for each action in the dimension
     for action in dim["actions"]:
-        if "pct" in action["name"]:  # Percentage inputs
+        if "pct" in action["name"]:
             value = st.sidebar.slider(
                 f"{action['desc']} (%)",
-                min_value=0,
-                max_value=100,
+                0, 100,
                 value=dim_data[action["name"]] if dim_data[action["name"]] is not None else 0,
                 key=f"{dim['id']}_{action['name']}"
             )
-        elif "count" in action["name"] or "improvements" in action["name"]:  # Numeric counts
+        elif "count" in action["name"] or "improvements" in action["name"]:
             value = st.sidebar.number_input(
                 f"{action['desc']}",
-                min_value=0,
+                0, None,
                 value=dim_data[action["name"]] if dim_data[action["name"]] is not None else 0,
                 key=f"{dim['id']}_{action['name']}"
             )
-        else:  # Boolean (Yes/No)
+        else:
             value = st.sidebar.checkbox(
                 f"{action['desc']}",
                 value=dim_data[action["name"]] if dim_data[action["name"]] is not None else False,
@@ -659,20 +576,15 @@ for dim in DIMENSIONS:
             )
         dim_data[action["name"]] = value
     
-    # Update session state with edited dimension data
     data[dim["id"]] = dim_data
     st.sidebar.markdown("---")
 
 # 4. Save Data
-if st.sidebar.button("💾 Save Data", use_container_width=True):
-    # Update session state with all inputs
+if st.sidebar.button("💾 Save Data & Calculate Scores", use_container_width=True):
     data["Company Name"] = company_name
     data["Industry"] = industry
-    st.session_state["production_data"] = data
-    
-    # Calculate scores
     calculate_dimension_scores()
-    st.sidebar.success("✅ Data saved and scores calculated!")
+    st.sidebar.success("✅ Data saved! Check main dashboard for results.")
     st.session_state["rerun_trigger"] = True
 
 # --- Rerun Trigger ---
@@ -680,14 +592,14 @@ if st.session_state["rerun_trigger"]:
     st.session_state["rerun_trigger"] = False
     st.rerun()
 
-# --- Main Dashboard (Results & Visualizations) ---
+# --- Main Dashboard (GSK-Style Results) ---
 data = st.session_state["production_data"]
 scores = data.get("dimension_scores", {})
 total_score = data.get("total_score", 0)
 
-st.title("🌱 SDG 12 Production Responsibility Evaluator")
+st.title("🌱 SDG 12 Production Responsibility Evaluator (GSK Report Compatible)")
 
-# 1. Overview Card
+# 1. Overview
 st.subheader("📋 Evaluation Overview")
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -697,43 +609,40 @@ with col2:
 with col3:
     st.metric("Total SDG 12 Score", f"{total_score}/100")
 
-# 2. Score Breakdown Chart
+# 2. Score Breakdown Chart (GSK Colors)
 st.subheader("📊 Dimension Score Breakdown")
 if scores:
-    # Prepare data for chart
     dim_names = [v["name"].split(" (")[0] for v in scores.values()]
     dim_scores = [v["weighted_score"] for v in scores.values()]
     dim_max = [v["max_weighted"] for v in scores.values()]
     
-    # Create bar chart
     fig, ax = plt.subplots(figsize=(12, 6))
     x = np.arange(len(dim_names))
     width = 0.35
     
-    bars1 = ax.bar(x - width/2, dim_scores, width, label="Achieved Score", color="#2E8B57")
-    bars2 = ax.bar(x + width/2, dim_max, width, label="Max Possible Score", color="#D3D3D3", alpha=0.7)
+    # GSK's brand colors (teal for achieved, light gray for max)
+    bars1 = ax.bar(x - width/2, dim_scores, width, label="Achieved Score", color="#00857C")
+    bars2 = ax.bar(x + width/2, dim_max, width, label="Max Possible Score", color="#E0E0E0")
     
-    ax.set_xlabel("Sustainability Dimensions")
+    ax.set_xlabel("SDG 12 Dimensions")
     ax.set_ylabel("Score")
-    ax.set_title("SDG 12 Dimension Score Comparison")
+    ax.set_title("SDG 12 Dimension Comparison (GSK-Aligned)")
     ax.set_xticks(x)
     ax.set_xticklabels(dim_names, rotation=45, ha="right")
     ax.legend()
     
-    # Add value labels on bars
+    # Add value labels
     for bar in bars1:
         height = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width()/2., height,
-                f"{height}", ha="center", va="bottom")
+        ax.text(bar.get_x() + bar.get_width()/2., height, f"{height}", ha="center", va="bottom")
     for bar in bars2:
         height = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width()/2., height,
-                f"{height}", ha="center", va="bottom")
+        ax.text(bar.get_x() + bar.get_width()/2., height, f"{height}", ha="center", va="bottom")
     
     plt.tight_layout()
     st.pyplot(fig)
 else:
-    st.info("ℹ️ Enter and save data in the sidebar to generate score breakdown.")
+    st.info("ℹ️ Upload GSK's ESG report and save data to generate scores.")
 
 # 3. Detailed Score Table
 st.subheader("📋 Detailed Score Table")
@@ -741,18 +650,16 @@ if scores:
     table_data = []
     for dim_id, dim_data in scores.items():
         table_data.append({
-            "Dimension": dim_data["name"],
+            "SDG 12 Dimension": dim_data["name"],
             "Achieved Subtotal": f"{dim_data['subtotal']}/{DIMENSIONS[[d['id'] for d in DIMENSIONS].index(dim_id)]['max_subtotal']}",
             "Weighted Score": f"{dim_data['weighted_score']}/{dim_data['max_weighted']}"
         })
     st.dataframe(pd.DataFrame(table_data), use_container_width=True)
-else:
-    st.info("ℹ️ No score data available. Save data to generate table.")
 
-# 4. AI Recommendations
-st.subheader("💡 Improvement Recommendations")
+# 4. AI Recommendations (Pharma-Specific)
+st.subheader("💡 Pharma-Specific Recommendations")
 if OPENAI_AVAILABLE and scores:
-    if st.button("Generate AI Recommendations", use_container_width=True):
+    if st.button("Generate GSK-Style Recommendations", use_container_width=True):
         with st.spinner("🤖 Generating recommendations..."):
             recommendations = ai_generate_recommendations()
             data["ai_recommendations"] = recommendations
@@ -762,13 +669,13 @@ if OPENAI_AVAILABLE and scores:
         for i, rec in enumerate(data["ai_recommendations"], 1):
             st.write(f"{i}. {rec}")
 else:
-    st.info("ℹ️ Save data and enable AI (with OPENAI_API_KEY) to generate recommendations.")
+    st.info("ℹ️ Upload GSK's report and enable AI to generate recommendations.")
 
-# 5. Mock ESG Excerpt
-st.subheader("📄 Mock ESG Report Excerpt")
+# 5. Mock ESG Excerpt (GSK Style)
+st.subheader("📄 Mock ESG Excerpt (GSK Template)")
 if OPENAI_AVAILABLE:
-    if st.button("Generate Mock ESG Excerpt", use_container_width=True):
-        with st.spinner("🤖 Writing mock ESG excerpt..."):
+    if st.button("Generate GSK-Style Excerpt", use_container_width=True):
+        with st.spinner("🤖 Writing ESG excerpt..."):
             mock_excerpt = ai_generate_mock_esg()
             data["mock_esg_excerpt"] = mock_excerpt
             st.session_state["production_data"] = data
@@ -776,13 +683,13 @@ if OPENAI_AVAILABLE:
     if data["mock_esg_excerpt"]:
         st.write(data["mock_esg_excerpt"])
 else:
-    st.info("ℹ️ Enable AI (with OPENAI_API_KEY) to generate a mock ESG excerpt.")
+    st.info("ℹ️ Enable AI to generate a GSK-style ESG excerpt.")
 
-# 6. ESG Writing Guidelines
+# 6. Writing Guidelines (GSK Reference)
 display_writing_recommendations()
 
-# 7. Report Export
-st.subheader("📥 Export Report")
+# 7. Report Export (GSK Format)
+st.subheader("📥 Export GSK-Style Report")
 if scores:
     report_content, _, _ = generate_report_content()
     
@@ -795,30 +702,27 @@ if scores:
         use_container_width=True
     )
     
-    # PDF Export (requires wkhtmltopdf)
+    # PDF Export (GSK-Style Formatting)
     if st.button("Generate PDF Report", use_container_width=True):
         if not OPENAI_AVAILABLE:
-            st.warning("⚠️ AI is required to generate PDF reports.")
+            st.warning("⚠️ AI is required for PDF report generation.")
             st.stop()
         
         try:
-            # Test wkhtmltopdf configuration
             pdfkit.configuration(wkhtmltopdf=pdfkit.from_url('http://google.com', False))
-            
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                # Format HTML for PDF
                 html_content = f"""
                 <html>
                 <head>
                     <title>{data['Company Name']} SDG 12 Report</title>
                     <style>
-                        body {{ font-family: Arial; margin: 20px; }}
-                        h1 {{ color: #2E8B57; }}
-                        .header {{ margin-bottom: 30px; }}
-                        .section {{ margin: 20px 0; }}
-                        table {{ border-collapse: collapse; width: 100%; margin: 10px 0; }}
-                        th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                        th {{ background-color: #f2f2f2; }}
+                        body {{ font-family: Arial; margin: 30px; }}
+                        h1 {{ color: #00857C; }}
+                        .header {{ border-bottom: 2px solid #00857C; padding-bottom: 10px; margin-bottom: 20px; }}
+                        table {{ border-collapse: collapse; width: 100%; margin: 20px 0; }}
+                        th {{ background-color: #00857C; color: white; padding: 8px; }}
+                        td {{ border: 1px solid #ddd; padding: 8px; }}
+                        .section {{ margin: 30px 0; }}
                     </style>
                 </head>
                 <body>
@@ -848,7 +752,6 @@ if scores:
                 """
                 pdfkit.from_string(html_content, tmp.name)
                 
-                # Provide download
                 with open(tmp.name, "rb") as f:
                     st.download_button(
                         label="Download PDF Report",
@@ -858,8 +761,7 @@ if scores:
                         use_container_width=True
                     )
             os.unlink(tmp.name)
-        
         except Exception as e:
-            st.error(f"⚠️ PDF generation failed: {str(e)}. Ensure wkhtmltopdf is installed (https://wkhtmltopdf.org/).")
+            st.error(f"⚠️ PDF generation failed: {str(e)} (install wkhtmltopdf: https://wkhtmltopdf.org/)")
 else:
-    st.info("ℹ️ Save data to generate and export reports.")
+    st.info("ℹ️ Save data to export reports.")
