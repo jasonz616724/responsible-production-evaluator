@@ -3,8 +3,15 @@ import json
 import pandas as pd
 import matplotlib.pyplot as plt
 from openai import OpenAI
-import PyPDF2
 import io
+
+# Handle PDF functionality with fallback
+try:
+    import PyPDF2
+    PDF_AVAILABLE = True
+except ImportError:
+    PDF_AVAILABLE = False
+    st.warning("⚠️ PyPDF2 library not found. PDF upload functionality is disabled. Install it with: pip install PyPDF2")
 
 # --- Page Configuration ---
 st.set_page_config(page_title="SDG 12 Production Evaluator", layout="wide")
@@ -24,7 +31,7 @@ except Exception as e:
 if "evaluation_data" not in st.session_state:
     st.session_state["evaluation_data"] = {
         "company_name": "",
-        "industry": "",
+        "industry": "Manufacturing",  # Set default industry
         "production_volume": 0,
         "circular_practices": [],
         "material_efficiency_checks": [False]*5,
@@ -83,7 +90,6 @@ SDG12_CRITERIA = {
     ]
 }
 
-# Simplified industry benchmarks (direct 0-100 scale)
 INDUSTRY_BENCHMARKS = {
     "manufacturing": 65,
     "food & beverage": 70,
@@ -110,11 +116,19 @@ def get_ai_response(prompt, system_msg="You are a helpful assistant."):
         return "Failed to generate AI response."
 
 def extract_text_from_pdf(file):
-    pdf_reader = PyPDF2.PdfReader(file)
-    text = ""
-    for page in pdf_reader.pages:
-        text += page.extract_text() or ""
-    return text
+    """Extract text from PDF with error handling"""
+    if not PDF_AVAILABLE:
+        return ""
+    
+    try:
+        pdf_reader = PyPDF2.PdfReader(file)
+        text = ""
+        for page in pdf_reader.pages:
+            text += page.extract_text() or ""
+        return text
+    except Exception as e:
+        st.error(f"Error reading PDF: {str(e)}")
+        return ""
 
 def analyze_esg_document(text):
     prompt = f"""Analyze this ESG report text and extract SDG 12 production data:
@@ -169,7 +183,7 @@ Results support SDG Target 12.2 (resource efficiency) and 12.5 (waste reduction)
     
     return get_ai_response(prompt, "You are an ESG report writer specializing in sustainable production.")
 
-# --- Score Calculation (No Weighting - Direct 0-100) ---
+# --- Score Calculation (0-100 Scale) ---
 def calculate_scores(evaluation_data):
     scores = {}
     
@@ -177,8 +191,7 @@ def calculate_scores(evaluation_data):
     for category in SDG12_CRITERIA.keys():
         checks = evaluation_data.get(f"{category}_checks", [False]*5)
         met_criteria = sum(checks)
-        # 20 points per category (each criterion = 4 points: 20/5=4)
-        scores[category] = met_criteria * 4
+        scores[category] = met_criteria * 4  # 4 points per criterion
     
     # Overall score = sum of all category scores (0-100)
     scores["overall"] = sum(scores.values())
@@ -238,7 +251,7 @@ def generate_report():
     for category, score in scores.items():
         if category != "overall":
             cat_name = category.replace("_", " ").title()
-            report.append(f"- {cat_name}: {score}/20")  # 20 points per category
+            report.append(f"- {cat_name}: {score}/20")
     report.append("")
     
     # Strengths & Improvements
@@ -305,12 +318,18 @@ def input_step_1():
     with col1:
         company_name = st.text_input("Company Name", st.session_state["evaluation_data"]["company_name"])
     with col2:
+        # Fix: Safely handle industry selection with fallback to default
+        industry_options = ["Manufacturing", "Food & Beverage", "Textiles", "Chemicals", "Electronics", "Other"]
+        current_industry = st.session_state["evaluation_data"]["industry"]
+        
+        # Ensure current industry is in options list, default to "Manufacturing" if not
+        if current_industry not in industry_options:
+            current_industry = "Manufacturing"
+            
         industry = st.selectbox(
             "Industry", 
-            ["Manufacturing", "Food & Beverage", "Textiles", "Chemicals", "Electronics", "Other"],
-            index=["Manufacturing", "Food & Beverage", "Textiles", "Chemicals", "Electronics", "Other"].index(
-                st.session_state["evaluation_data"]["industry"]
-            )
+            industry_options,
+            index=industry_options.index(current_industry)
         )
     
     production_volume = st.number_input(
@@ -326,7 +345,6 @@ def input_step_1():
         st.session_state["current_step"] = 2
         st.rerun()
 
-# Step 2-6: Criteria Input (unchanged structure, simplified scoring logic)
 def input_step_2():
     st.subheader("Step 2: Material Efficiency")
     checks = st.session_state["evaluation_data"]["material_efficiency_checks"]
@@ -450,16 +468,23 @@ if st.session_state["current_step"] == 0:
     
     with col1:
         st.subheader("Upload ESG Report")
-        uploaded_file = st.file_uploader("Upload PDF", type="pdf")
-        if uploaded_file and st.button("Analyze Document") and OPENAI_AVAILABLE:
-            with st.spinner("Analyzing..."):
-                text = extract_text_from_pdf(uploaded_file)
-                result = analyze_esg_document(text)
-                if result:
-                    st.session_state["evaluation_data"] = result
-                    st.session_state["current_step"] = 7
-                    generate_report()
-                    st.rerun()
+        if not PDF_AVAILABLE:
+            st.info("PDF upload requires PyPDF2. Install with: pip install PyPDF2")
+        else:
+            uploaded_file = st.file_uploader("Upload PDF", type="pdf")
+            if uploaded_file and st.button("Analyze Document") and OPENAI_AVAILABLE:
+                with st.spinner("Analyzing..."):
+                    text = extract_text_from_pdf(uploaded_file)
+                    result = analyze_esg_document(text)
+                    if result:
+                        st.session_state["evaluation_data"] = result
+                        # Ensure industry is valid if coming from PDF
+                        industry_options = ["Manufacturing", "Food & Beverage", "Textiles", "Chemicals", "Electronics", "Other"]
+                        if st.session_state["evaluation_data"].get("industry") not in industry_options:
+                            st.session_state["evaluation_data"]["industry"] = "Manufacturing"
+                        st.session_state["current_step"] = 7
+                        generate_report()
+                        st.rerun()
     
     with col2:
         st.subheader("Manual Input")
@@ -502,7 +527,7 @@ elif st.session_state["current_step"] == 7:
         st.session_state.clear()
         st.session_state["evaluation_data"] = {
             "company_name": "",
-            "industry": "",
+            "industry": "Manufacturing",  # Reset with valid default
             "production_volume": 0,
             "circular_practices": [],
             "material_efficiency_checks": [False]*5,
