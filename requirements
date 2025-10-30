@@ -1,0 +1,18 @@
+# Core Libraries (Mandatory)
+streamlit>=1.20.0          # Web framework for building the interactive UI
+pandas>=1.5.0              # Data handling for score tables and input management
+matplotlib>=3.7.0          # Generating score breakdown charts and visualizations
+numpy>=1.23.0              # Numerical operations for chart formatting (e.g., bar positioning)
+openai>=1.0.0              # Integration with OpenAI API for AI features (data extraction, recommendations)
+pymupdf>=1.22.0            # PDF text extraction (fitz library for reading PDF content)
+
+# PDF Export Dependencies (Optional but Recommended)
+pdfkit>=1.0.0              # Converts HTML/TXT content to PDF for report export
+# Note: pdfkit requires wkhtmltopdf (external tool) — install via:
+# - Windows: https://wkhtmltopdf.org/downloads.html
+# - macOS: brew install wkhtmltopdf
+# - Linux: sudo apt-get install wkhtmltopdf
+
+# Development/Optional Tools (For debugging/optimization)
+ipython>=8.10.0            # Interactive Python shell for debugging (optional)
+black>=23.1.0              # Code formatting (optional, for maintaining clean code)
