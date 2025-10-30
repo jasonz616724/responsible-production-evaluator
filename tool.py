@@ -208,7 +208,7 @@ def extract_pdf_text(uploaded_file):
         return ""
 
 def ai_extract_esg_data():
-    """Extract SDG 12 data from GSK's pre-isolated sections (faster + more accurate)"""
+    """Extract SDG 12 data from GSK's report—replace None with 0/False"""
     data = st.session_state["production_data"]
     section_text = data["extracted_sections"]
     
@@ -291,10 +291,26 @@ def ai_extract_esg_data():
     
     try:
         extracted_data = json.loads(response)
-        # Validate GSK-specific fields (e.g., industry should be Pharmaceuticals)
+        # Critical: Replace None with valid values for GSK report gaps
+        for key, value in extracted_data.items():
+            if isinstance(value, dict):  # Nested metrics (e.g., resource_efficiency)
+                for subkey, subval in value.items():
+                    if subval is None:
+                        if "pct" in subkey or "count" in subkey:
+                            extracted_data[key][subkey] = 0  # Default %/count to 0
+                        elif "cert" in subkey or "compliance" in subkey:
+                            extracted_data[key][subkey] = False  # Default booleans to False
+            elif value is None:  # Top-level fields (e.g., company_name)
+                if key == "company_name":
+                    extracted_data[key] = "GSK PLC"  # GSK's default name
+                elif key == "industry":
+                    extracted_data[key] = "Pharmaceuticals"  # GSK's industry
+        
+        # Validate GSK-specific fields
         if extracted_data.get("industry") != "Pharmaceuticals":
             extracted_data["industry"] = "Pharmaceuticals"
         return extracted_data
+    
     except json.JSONDecodeError:
         st.sidebar.error(f"⚠️ Failed to parse GSK data. Raw AI response: {response[:200]}...")
         return {}
@@ -542,11 +558,12 @@ industry = st.sidebar.selectbox(
     key="industry"
 )
 
-# 3. Dimension Inputs (Pharma-Aligned Labels)
+# 3. Dimension Inputs (Pharma-Aligned Labels + GSK Data None Handling)
 st.sidebar.subheader("3. SDG 12 Production Data")
 data = st.session_state["production_data"]
 
 for dim in DIMENSIONS:
+    # Skip tourism dimension for non-relevant industries (GSK = Pharmaceuticals)
     if dim["id"] == "tourism_infrastructure" and industry not in dim["industries"]:
         continue
     
@@ -554,28 +571,39 @@ for dim in DIMENSIONS:
     dim_data = data[dim["id"]]
     
     for action in dim["actions"]:
-        if "pct" in action["name"]:
+        # Get current value—default to 0 if None (critical for GSK report gaps)
+        current_value = dim_data[action["name"]]
+        initial_value = current_value if current_value is not None else 0
+        
+        if "pct" in action["name"]:  # Percentage sliders (GSK uses % for most metrics)
             value = st.sidebar.slider(
                 f"{action['desc']} (%)",
-                0, 100,
-                value=dim_data[action["name"]] if dim_data[action["name"]] is not None else 0,
-                key=f"{dim['id']}_{action['name']}"
+                min_value=0,
+                max_value=100,
+                value=initial_value,  # No more None—safe for slider
+                key=f"{dim['id']}_{action['name']}",
+                help=f"GSK reference: See {dim['name']} in Environment chapter (pages 18-25)"
             )
-        elif "count" in action["name"] or "improvements" in action["name"]:
+        elif "count" in action["name"] or "improvements" in action["name"]:  # Numeric counts
             value = st.sidebar.number_input(
                 f"{action['desc']}",
-                0, None,
-                value=dim_data[action["name"]] if dim_data[action["name"]] is not None else 0,
-                key=f"{dim['id']}_{action['name']}"
+                min_value=0,
+                value=int(initial_value),  # Ensure integer for counts (e.g., GSK's energy tech count)
+                key=f"{dim['id']}_{action['name']}",
+                help=f"GSK reference: Count of initiatives (e.g., solar/wind projects)"
             )
-        else:
+        else:  # Boolean checkboxes (GSK uses "compliance" or "certification" for these)
             value = st.sidebar.checkbox(
                 f"{action['desc']}",
-                value=dim_data[action["name"]] if dim_data[action["name"]] is not None else False,
-                key=f"{dim['id']}_{action['name']}"
+                value=initial_value if isinstance(initial_value, bool) else False,  # Fix boolean None
+                key=f"{dim['id']}_{action['name']}",
+                help=f"GSK reference: Check if GSK mentions compliance/certification"
             )
+        
+        # Update session state with valid value (no None)
         dim_data[action["name"]] = value
     
+    # Save updated dimension data back to session state
     data[dim["id"]] = dim_data
     st.sidebar.markdown("---")
 
