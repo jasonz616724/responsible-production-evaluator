@@ -298,15 +298,50 @@ def ai_generate_recommendations():
 def ai_generate_mock_esg():
     """Generate a 300-500 word mock ESG excerpt for the company."""
     data = st.session_state["production_data"]
-    scores = data["dimension_scores"]
+    scores = data["dimension_scores"]  # Format: {dim_id: {"weighted_score": X, ...}, ...}
     total_score = data["total_score"]
+    company_industry = data["Industry"]
+    
+    # Calculate high-scoring dimensions (score >70% of max possible weighted score)
+    high_dimensions = []
+    for dim in DIMENSIONS:
+        # Skip tourism dimension if industry is not relevant
+        if dim["id"] == "tourism_infrastructure" and company_industry not in dim["industries"]:
+            continue
+        
+        # Get the actual weighted score (default to 0 if missing)
+        dim_score = scores.get(dim["id"], {}).get("weighted_score", 0)
+        # Calculate 70% of the maximum possible weighted score for this dimension
+        high_threshold = (dim["max_subtotal"] * dim["weight"]) * 0.7
+        
+        if dim_score > high_threshold:
+            high_dimensions.append(dim["name"])
+    
+    # Calculate low-scoring dimensions (score <50% of max possible weighted score)
+    low_dimensions = []
+    for dim in DIMENSIONS:
+        # Skip tourism dimension if industry is not relevant
+        if dim["id"] == "tourism_infrastructure" and company_industry not in dim["industries"]:
+            continue
+        
+        dim_score = scores.get(dim["id"], {}).get("weighted_score", 0)
+        low_threshold = (dim["max_subtotal"] * dim["weight"]) * 0.5
+        
+        if dim_score < low_threshold:
+            low_dimensions.append(dim["name"])
+    
+    # Fallbacks if no high/low dimensions are found
+    if not high_dimensions:
+        high_dimensions = ["Chemicals & Waste Management (SDG 12.4)"]
+    if not low_dimensions:
+        low_dimensions = ["Resource Efficiency (SDG 12.2)"]
     
     prompt = f"""Write a 300-500 word mock ESG report excerpt for {data['Company Name']} (Industry: {data['Industry']}).
     Include:
     1. Introduction to their production sustainability efforts.
     2. Key metrics: renewable energy use ({data['resource_efficiency']['renewable_energy_pct']}%), recycled materials ({data['sustainable_production']['recycled_material_pct']}%), waste recycling ({data['chemical_waste']['waste_recycling_pct']}%).
-    3. Strengths (high-scoring dimensions: {[dim['name'] for dim in DIMENSIONS if scores.get(dim['id'], 0) > (dim['max_subtotal'] * dim['weight']) * 0.7]}).
-    4. Areas for improvement (low-scoring dimensions: {[dim['name'] for dim in DIMENSIONS if scores.get(dim['id'], 0) < (dim['max_subtotal'] * dim['weight']) * 0.5]}).
+    3. Strengths (high-scoring dimensions: {high_dimensions}).
+    4. Areas for improvement (low-scoring dimensions: {low_dimensions}).
     5. Future goals aligned with SDG 12.
     Use a formal, professional tone (like real ESG reports). Do NOT use bullet points."""
     
@@ -317,7 +352,6 @@ Strengths include waste management (segregation rate of 60%) and sustainable pro
 Key areas for improvement include resource efficiency (water reuse rate of 40% below the 70% target) and circular economy integration (only 20% of product lines have take-back programs). Life-cycle thinking efforts are also nascent, with LCAs conducted for just 20% of product lines.
 
 Looking ahead, EcoManufacture aims to increase renewable energy to 50% by 2026 (SDG 12.2), expand take-back programs to 50% of products (SDG 12.5), and achieve 70% water reuse (SDG 12.2)—aligning with its long-term vision of carbon-neutral production by 2030."""
-
 # --- Helper Functions ---
 def extract_pdf_text(uploaded_file):
     """Extract text from uploaded PDF."""
