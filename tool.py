@@ -1,6 +1,6 @@
 import streamlit as st
 import json
-import re  # New: For cleaning AI responses
+import re
 import pandas as pd
 import matplotlib.pyplot as plt
 from openai import OpenAI
@@ -120,7 +120,7 @@ def get_ai_response(prompt, system_msg="You are a helpful assistant."):
         return response.choices[0].message.content.strip()
     except Exception as e:
         st.error(f"AI error: {str(e)}")
-        return ""  # Return empty string to trigger fallback
+        return ""
 
 def extract_text_from_pdf(file):
     if not PDF_AVAILABLE:
@@ -132,8 +132,7 @@ def extract_text_from_pdf(file):
         for page in pdf_reader.pages:
             page_text = page.extract_text() or ""
             text += page_text
-        # Validate extracted text quality
-        if len(text.strip()) < 500:  # Too short to contain meaningful data
+        if len(text.strip()) < 500:
             st.warning("⚠️ Extracted text is very short. May not contain enough information.")
         return text
     except Exception as e:
@@ -141,7 +140,6 @@ def extract_text_from_pdf(file):
         return ""
 
 def analyze_esg_document(text):
-    """Improved document analysis with JSON validation and error handling"""
     if len(text.strip()) < 300:
         st.error("❌ Not enough text extracted from PDF to analyze. Please use manual input.")
         return {}
@@ -165,7 +163,6 @@ def analyze_esg_document(text):
     """
     
     try:
-        # Get AI response with strict JSON instruction
         response = get_ai_response(
             prompt, 
             "You are an ESG data extractor. Return ONLY valid JSON. No extra text."
@@ -175,19 +172,14 @@ def analyze_esg_document(text):
             st.error("❌ AI returned empty response. Could not analyze document.")
             return {}
 
-        # Clean response: Remove any non-JSON prefix/suffix (common in AI outputs)
-        # Use regex to find the first { and last } to extract valid JSON
         json_match = re.search(r'\{.*\}', response, re.DOTALL)
         if not json_match:
             st.error(f"❌ AI response is not valid JSON. Raw response: {response[:200]}...")
             return {}
         
         clean_json = json_match.group()
-        
-        # Parse JSON with validation
         result = json.loads(clean_json)
         
-        # Validate required fields exist
         required_fields = ["company_name", "industry", "material_efficiency_checks", 
                           "waste_management_checks", "energy_efficiency_checks",
                           "water_management_checks", "circular_economy_checks"]
@@ -290,9 +282,11 @@ def generate_report():
     industry = data.get("industry", "manufacturing").lower()
     benchmark = INDUSTRY_BENCHMARKS.get(industry, 60)
     
+    # Fix: Define title first before using it for the underline
+    title = f"SDG Goal 12 Evaluation: {data.get('company_name', 'Unknown Company')}"
     report = [
-        f"SDG Goal 12 Evaluation: {data.get('company_name', 'Unknown Company')}",
-        "=" * len(report[0]),
+        title,
+        "=" * len(title),  # Now safely uses the pre-defined title
         "",
         "1. Overview",
         f"- Company: {data.get('company_name', 'Not provided')}",
