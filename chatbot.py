@@ -34,6 +34,67 @@ if "state" not in st.session_state:
         "score": 0
     }
 
+# --- Chat Dialogue State ---
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []  # list of {"role": "bot"/"user", "content": str}
+    st.session_state.round = 0
+    st.session_state.final_report = None
+
+# --- Chat Dialogue Questions (Can customize)
+DIALOGUE_QUESTIONS = [
+    "What is your company's name?",
+    "What is your company's industry?",
+    "What percentage of your energy use is renewable?",
+    "What percentage of your water is reused?",
+    "How many energy-saving technologies does your company use?",
+    "Does your company have eco-certified products? (Yes/No)"
+]
+
+# --- Main Chat Dialogue UI ---
+st.title("🌱 Production Sustainability Chat")
+if st.session_state.final_report:
+    st.success("Dialogue Complete! Here is your detailed sustainability report:")
+    st.markdown(st.session_state.final_report)
+    if st.button("Restart Chat"):
+        st.session_state.chat_history = []
+        st.session_state.round = 0
+        st.session_state.final_report = None
+        st.rerun()
+else:
+    st.info("Answer the bot's questions. You'll get a detailed report after 6 rounds!")
+    for turn in st.session_state.chat_history:
+        role = turn["role"]
+        if role == "bot":
+            st.markdown(f"**Bot:** {turn['content']}")
+        else:
+            st.markdown(f"**You:** {turn['content']}")
+    curr_round = st.session_state.round
+    if curr_round < 6:
+        question = DIALOGUE_QUESTIONS[curr_round]
+        st.session_state.chat_history.append({"role": "bot", "content": question})
+        user_input = st.text_input("Your answer", key=f"chat_round_{curr_round}")
+        if st.button("Send", key=f"send_{curr_round}"):
+            if user_input.strip():
+                st.session_state.chat_history.append({"role": "user", "content": user_input.strip()})
+                st.session_state.round += 1
+                st.rerun()
+    else:
+        # Build and display mock final report from chat_history
+        answers = [x["content"] for x in st.session_state.chat_history if x["role"] == "user"]
+        report = """
+## Sustainability Report
+- **Company Name:** {0}
+- **Industry:** {1}
+- **Renewable Energy %:** {2}
+- **Water Reuse %:** {3}
+- **Energy-Saving Technologies:** {4}
+- **Eco-Certified Products:** {5}
+
+### [This is a mockup. Link sustainability scoring here.]
+""".format(*answers)
+        st.session_state.final_report = report
+        st.rerun()
+
 # --- Core Functions ---
 def extract_pdf_text(uploaded_file):
     """Robust PDF text extraction, with better diagnostics"""
