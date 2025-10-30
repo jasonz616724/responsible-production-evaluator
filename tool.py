@@ -1,5 +1,6 @@
 import streamlit as st
 import json
+import re  # New: For cleaning AI responses
 import pandas as pd
 import matplotlib.pyplot as plt
 from openai import OpenAI
@@ -39,7 +40,7 @@ if "evaluation_data" not in st.session_state:
         "energy_efficiency_checks": [False]*5,
         "water_management_checks": [False]*5,
         "circular_economy_checks": [False]*5,
-        "project_details": {  # New: For specific project data
+        "project_details": {
             "project_name": "",
             "timeframe": "2023 Q1-Q4",
             "investment": 0,
@@ -113,13 +114,13 @@ def get_ai_response(prompt, system_msg="You are a helpful assistant."):
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "system", "content": system_msg}, {"role": "user", "content": prompt}],
-            temperature=0.2,  # Lower for factual precision
+            temperature=0.2,
             timeout=20
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
         st.error(f"AI error: {str(e)}")
-        return "Failed to generate AI response."
+        return ""  # Return empty string to trigger fallback
 
 def extract_text_from_pdf(file):
     if not PDF_AVAILABLE:
@@ -129,29 +130,82 @@ def extract_text_from_pdf(file):
         pdf_reader = PyPDF2.PdfReader(file)
         text = ""
         for page in pdf_reader.pages:
-            text += page.extract_text() or ""
+            page_text = page.extract_text() or ""
+            text += page_text
+        # Validate extracted text quality
+        if len(text.strip()) < 500:  # Too short to contain meaningful data
+            st.warning("⚠️ Extracted text is very short. May not contain enough information.")
         return text
     except Exception as e:
         st.error(f"Error reading PDF: {str(e)}")
         return ""
 
 def analyze_esg_document(text):
-    prompt = f"""Extract SDG 12 production data from this ESG report:
-    - Company name
-    - Industry
-    - Specific sustainability projects (2023-2024) with metrics
-    - For each category, mark criteria met (true/false): {json.dumps(SDG12_CRITERIA, indent=2)}
-    Return as JSON only."""
+    """Improved document analysis with JSON validation and error handling"""
+    if len(text.strip()) < 300:
+        st.error("❌ Not enough text extracted from PDF to analyze. Please use manual input.")
+        return {}
+
+    prompt = f"""Analyze this ESG report text and extract SDG 12 production data.
+    RETURN ONLY A VALID JSON OBJECT (NO EXPLANATIONS, NO MARKDOWN).
+    
+    Required fields:
+    - company_name (string)
+    - industry (string)
+    - production_volume (number, or 0 if unknown)
+    - material_efficiency_checks (array of 5 booleans)
+    - waste_management_checks (array of 5 booleans)
+    - energy_efficiency_checks (array of 5 booleans)
+    - water_management_checks (array of 5 booleans)
+    - circular_economy_checks (array of 5 booleans)
+    - project_details (object with project_name, timeframe, investment)
+    
+    Criteria for checks (map each to true/false if met):
+    {json.dumps(SDG12_CRITERIA, indent=2)}
+    """
     
     try:
-        response = get_ai_response(prompt, "You are an ESG analyst specializing in SDG 12.")
-        return json.loads(response)
+        # Get AI response with strict JSON instruction
+        response = get_ai_response(
+            prompt, 
+            "You are an ESG data extractor. Return ONLY valid JSON. No extra text."
+        )
+        
+        if not response:
+            st.error("❌ AI returned empty response. Could not analyze document.")
+            return {}
+
+        # Clean response: Remove any non-JSON prefix/suffix (common in AI outputs)
+        # Use regex to find the first { and last } to extract valid JSON
+        json_match = re.search(r'\{.*\}', response, re.DOTALL)
+        if not json_match:
+            st.error(f"❌ AI response is not valid JSON. Raw response: {response[:200]}...")
+            return {}
+        
+        clean_json = json_match.group()
+        
+        # Parse JSON with validation
+        result = json.loads(clean_json)
+        
+        # Validate required fields exist
+        required_fields = ["company_name", "industry", "material_efficiency_checks", 
+                          "waste_management_checks", "energy_efficiency_checks",
+                          "water_management_checks", "circular_economy_checks"]
+        for field in required_fields:
+            if field not in result:
+                st.warning(f"⚠️ Missing field '{field}' in analysis. Using defaults.")
+                result[field] = "" if field in ["company_name", "industry"] else [False]*5
+        
+        return result
+    
+    except json.JSONDecodeError as e:
+        st.error(f"❌ Invalid JSON from AI: {str(e)}. Raw response: {clean_json[:200]}...")
+        return {}
     except Exception as e:
-        st.error(f"Document analysis error: {str(e)}")
+        st.error(f"❌ Document analysis failed: {str(e)}")
         return {}
 
 def ai_generate_mock_esg(evaluation_data):
-    """Generate ESG excerpt mimicking real corporate reports (specific project focus)"""
     if not OPENAI_AVAILABLE:
         return """## 3.2 Circular Production Initiative: Plastic Waste Reduction Program  
         *Facility: Southeast Asia Manufacturing Hub | Timeframe: Jan-Dec 2023*  
@@ -176,20 +230,17 @@ def ai_generate_mock_esg(evaluation_data):
 
         *Verified by SGS (Report Ref: ESG-23-1472 | Audit Date: Jan 2024)*"""
     
-    # Extract project-specific data
     company = evaluation_data.get("company_name", "Sustainable Manufacturing Inc.")
     industry = evaluation_data.get("industry", "manufacturing").lower()
     project_name = evaluation_data["project_details"].get("project_name") or "Circular Material Optimization"
     timeframe = evaluation_data["project_details"].get("timeframe") or "2023"
-    investment = evaluation_data["project_details"].get("investment") or 2800000  # $2.8M default
+    investment = evaluation_data["project_details"].get("investment") or 2800000
     
-    # Calculate metrics from criteria checks
     material_met = sum(evaluation_data["material_efficiency_checks"])
     waste_met = sum(evaluation_data["waste_management_checks"])
-    recycled_pct = 30 + (material_met * 5)  # 30-55% based on checks
-    waste_diversion = 75 + (waste_met * 3)  # 75-90% based on checks
+    recycled_pct = 30 + (material_met * 5)
+    waste_diversion = 75 + (waste_met * 3)
     
-    # Industry-specific context
     industry_context = {
         "manufacturing": "machinery components",
         "food & beverage": "packaging and processing waste",
@@ -198,35 +249,18 @@ def ai_generate_mock_esg(evaluation_data):
         "electronics": "e-waste component recovery"
     }.get(industry, "production waste")
     
-    # AI prompt mimicking real ESG reports
     prompt = f"""Write a 350-word ESG report excerpt for {company} about their {project_name} in {timeframe}.  
-    Follow these strict guidelines (modeled after Fortune 500 ESG reports):  
-
-    1. Structure:  
-       - Project header with location/timeframe  
-       - 1-paragraph overview (no company intro—readers know the company)  
-       - "Key Achievements" section with 3 bullet points (include {recycled_pct}% recycled content, {waste_diversion}% waste diversion, and a metric with tons/liters)  
-       - "Environmental Impact" with 2 quantifiable outcomes  
-       - "SDG Alignment" linking to specific targets (12.2, 12.5, etc.)  
-       - "2024 Plans" with ${investment:,} investment figure  
-       - Third-party verification line (auditor, report number, date)  
-
-    2. Tone: Factual, concise, technical (avoid marketing language). Use industry terms for {industry}.  
-
-    3. Context: Focus on {industry_context} (relevant to their sector).  
-
-    Example flow: Specific project details → hard metrics → impact → next steps.  
-    Do NOT include company mission, history, or general sustainability statements."""
+    Structure: Project header, overview, key achievements (3 bullets with {recycled_pct}% recycled content, {waste_diversion}% waste diversion), environmental impact, SDG alignment, 2024 plans with ${investment:,} investment, third-party verification.  
+    Tone: Factual, technical. Focus on {industry_context}."""
     
-    return get_ai_response(prompt, """You are a senior ESG report writer for multinational corporations.  
-    Write excerpts that could be directly inserted into a real ESG report—specific, data-heavy, and project-focused.""")
+    return get_ai_response(prompt, "Senior ESG report writer: Generate excerpts for real corporate reports.")
 
-# --- Score Calculation (0-100 Scale) ---
+# --- Score Calculation ---
 def calculate_scores(evaluation_data):
     scores = {}
     for category in SDG12_CRITERIA.keys():
         checks = evaluation_data.get(f"{category}_checks", [False]*5)
-        scores[category] = sum(checks) * 4  # 4 points per criterion
+        scores[category] = sum(checks) * 4
     scores["overall"] = sum(scores.values())
     return scores
 
@@ -234,16 +268,16 @@ def calculate_scores(evaluation_data):
 def generate_recommendations(scores, evaluation_data):
     if not OPENAI_AVAILABLE:
         return [
-            f"Expand recycled material sourcing to reach {min(50, int(recycled_pct) + 10)}% by 2024.",
-            "Implement real-time waste tracking to identify additional reduction opportunities.",
-            f"Allocate {int(investment * 0.1)} for employee training on circular practices."
+            f"Expand recycled material sourcing to reach {min(50, 38 + 10)}% by 2024.",
+            "Implement real-time waste tracking to identify reduction opportunities.",
+            "$280K allocated for employee training on circular practices."
         ]
     
     weak_areas = [k.replace("_", " ").title() for k, v in scores.items() if v < 10 and k != "overall"]
     industry = evaluation_data.get("industry", "manufacturing")
     
-    prompt = f"Give 3 {industry}-specific SDG 12 recommendations for their circular project. Weak areas: {weak_areas}. Include investment figures."
-    response = get_ai_response(prompt, "You are a sustainability consultant specializing in industrial projects.")
+    prompt = f"3 {industry}-specific SDG 12 recommendations. Weak areas: {weak_areas}. Include investment figures."
+    response = get_ai_response(prompt, "Sustainability consultant for industrial projects.")
     return [line.strip() for line in response.split('\n') if line.strip()][:3]
 
 def generate_report():
@@ -256,35 +290,33 @@ def generate_report():
     industry = data.get("industry", "manufacturing").lower()
     benchmark = INDUSTRY_BENCHMARKS.get(industry, 60)
     
-    report = []
-    report.append(f"SDG Goal 12 Evaluation: {data.get('company_name', 'Unknown Company')}")
-    report.append("=" * len(report[0]))
-    report.append("")
+    report = [
+        f"SDG Goal 12 Evaluation: {data.get('company_name', 'Unknown Company')}",
+        "=" * len(report[0]),
+        "",
+        "1. Overview",
+        f"- Company: {data.get('company_name', 'Not provided')}",
+        f"- Industry: {data.get('industry', 'Not provided')}",
+        f"- Focus Project: {data['project_details'].get('project_name') or 'Circular Production Initiative'}",
+        "",
+        "2. ESG Report Excerpt (Production Sustainability)",
+        st.session_state["custom_esg_excerpt"],
+        "",
+        "3. SDG 12 Scorecard",
+        f"- Overall Score: {scores['overall']}/100",
+        f"- Industry Benchmark: {benchmark}/100",
+        ""
+    ]
     
-    # Overview
-    report.append("1. Overview")
-    report.append(f"- Company: {data.get('company_name', 'Not provided')}")
-    report.append(f"- Industry: {data.get('industry', 'Not provided')}")
-    report.append(f"- Focus Project: {data['project_details'].get('project_name') or 'Circular Production Initiative'}")
-    report.append("")
-    
-    # ESG Excerpt (Project Focus)
-    report.append("2. ESG Report Excerpt (Production Sustainability)")
-    report.append(st.session_state["custom_esg_excerpt"])
-    report.append("")
-    
-    # Scorecard
-    report.append("3. SDG 12 Scorecard")
-    report.append(f"- Overall Score: {scores['overall']}/100")
-    report.append(f"- Industry Benchmark: {benchmark}/100")
-    report.append("")
     for category, score in scores.items():
         if category != "overall":
             report.append(f"- {category.replace('_', ' ').title()}: {score}/20")
-    report.append("")
     
-    # Recommendations
-    report.append("4. Project Recommendations")
+    report.extend([
+        "",
+        "4. Project Recommendations"
+    ])
+    
     for i, rec in enumerate(recommendations, 1):
         report.append(f"- {i}. {rec}")
     
@@ -295,7 +327,6 @@ def generate_report():
 def render_score_charts(scores):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
     
-    # Donut chart for overall score
     overall_score = scores['overall']
     ax1.pie([overall_score, 100 - overall_score], 
             labels=['Achieved', 'Remaining'], 
@@ -306,7 +337,6 @@ def render_score_charts(scores):
     ax1.set_title('Overall SDG 12 Score')
     ax1.text(0, 0, f'{overall_score}/100', ha='center', va='center', fontsize=24)
     
-    # Bar chart for category scores
     categories = [k.replace("_", " ").title() for k in scores if k != "overall"]
     category_scores = [scores[k] for k in scores if k != "overall"]
     
@@ -443,7 +473,6 @@ def input_step_5():
 def render_report():
     st.subheader(f"🌱 SDG 12 Evaluation: {st.session_state['evaluation_data']['company_name']}")
     
-    # Highlight the ESG excerpt as a report snippet
     st.subheader("ESG Report Excerpt (Production Project)")
     st.info(st.session_state["custom_esg_excerpt"])
     
@@ -453,7 +482,6 @@ def render_report():
     st.subheader("Full Evaluation")
     st.text(st.session_state["report_text"])
     
-    # Download options
     col1, col2 = st.columns(2)
     with col1:
         st.download_button(
@@ -507,15 +535,22 @@ if st.session_state["current_step"] == 0:
             if uploaded_file and st.button("Analyze Document") and OPENAI_AVAILABLE:
                 with st.spinner("Analyzing..."):
                     text = extract_text_from_pdf(uploaded_file)
-                    result = analyze_esg_document(text)
-                    if result:
-                        st.session_state["evaluation_data"] = result
-                        industry_options = ["Manufacturing", "Food & Beverage", "Textiles", "Chemicals", "Electronics", "Other"]
-                        if st.session_state["evaluation_data"].get("industry") not in industry_options:
-                            st.session_state["evaluation_data"]["industry"] = "Manufacturing"
-                        st.session_state["current_step"] = 6
-                        generate_report()
-                        st.rerun()
+                    if not text:
+                        st.error("❌ Could not extract text from PDF. Please try manual input.")
+                    else:
+                        result = analyze_esg_document(text)
+                        if result:
+                            st.session_state["evaluation_data"] = result
+                            industry_options = ["Manufacturing", "Food & Beverage", "Textiles", "Chemicals", "Electronics", "Other"]
+                            if st.session_state["evaluation_data"].get("industry") not in industry_options:
+                                st.session_state["evaluation_data"]["industry"] = "Manufacturing"
+                            st.session_state["current_step"] = 6
+                            generate_report()
+                            st.rerun()
+                        else:
+                            st.warning("⚠️ Could not analyze document. Switching to manual input.")
+                            st.session_state["current_step"] = 1
+                            st.rerun()
     
     with col2:
         st.subheader("Manual Input")
@@ -524,7 +559,7 @@ if st.session_state["current_step"] == 0:
             st.session_state["current_step"] = 1
             st.rerun()
     
-    with st.expander("View Sample ESG Excerpt (Realistic Style)"):
+    with st.expander("View Sample ESG Excerpt"):
         st.text("""## 3.2 Circular Production Initiative: Plastic Waste Reduction Program  
         *Facility: Southeast Asia Manufacturing Hub | Timeframe: Jan-Dec 2023*  
 
@@ -548,7 +583,6 @@ if st.session_state["current_step"] == 0:
 
         *Verified by SGS (Report Ref: ESG-23-1472 | Audit Date: Jan 2024)*""")
 
-# Step navigation
 elif st.session_state["current_step"] == 1:
     input_step_1()
 elif st.session_state["current_step"] == 2:
@@ -562,7 +596,6 @@ elif st.session_state["current_step"] == 5:
 elif st.session_state["current_step"] == 6:
     render_report()
 
-# Progress indicator
 if 1 <= st.session_state["current_step"] <= 5:
     st.sidebar.progress(st.session_state["current_step"] / 5)
     st.sidebar.write(f"Step {st.session_state['current_step']}/5")
