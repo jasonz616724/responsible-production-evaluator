@@ -5,12 +5,8 @@ matplotlib>=3.7.0          # Generating score breakdown charts and visualization
 numpy>=1.23.0              # Numerical operations for chart formatting (e.g., bar positioning)
 openai>=1.0.0              # Integration with OpenAI API for AI features (data extraction, recommendations)
 pymupdf>=1.22.0            # PDF text extraction (fitz library for reading PDF content)
-streamlit
-openai
-pandas
-matplotlib
-pdfkit
-PyMuPDF
+
+
 # PDF Export Dependencies (Optional but Recommended)
 pdfkit>=1.0.0              # Converts HTML/TXT content to PDF for report export
 # Note: pdfkit requires wkhtmltopdf (external tool) — install via:
