@@ -1,218 +1,208 @@
 import streamlit as st
 import json
-import fitz
+import fitz  # For PDF extraction
 from openai import OpenAI
 import re
 
 # --- Page Setup ---
 st.set_page_config(page_title="Sustainability Evaluator", layout="centered")
 st.title("🌱 Production Sustainability Check")
-st.write("Upload an ESG report or answer questions to assess your efforts.")
+st.write("Upload an ESG report or enter data manually to assess your efforts.")
 
-# --- OpenAI Setup (Simplified) ---
+# --- OpenAI Setup (GPT-3.5-Turbo) ---
 OPENAI_AVAILABLE = False
 client = None
 try:
+    # Use GPT-3.5-turbo (reliable and widely available)
     client = OpenAI(api_key=st.secrets.get("OPENAI_API_KEY", ""))
     OPENAI_AVAILABLE = True
-except:
-    st.warning("AI features disabled (no API key). Use manual input.")
+except Exception as e:
+    st.warning(f"AI features disabled (check API key). Error: {str(e)[:50]}")
 
 # --- Session State (Simplified) ---
 if "state" not in st.session_state:
     st.session_state.state = {
         "company": "",
         "industry": "",
-        "step": "start",  # start → industry → questions → results
+        "step": "start",  # start → input → results
+        "pdf_text": "",
         "data": {
-            "resource_use": {"renewable": 0, "water_reuse": 0, "energy_tech": 0, "extra": ""},
-            "materials": {"recycled_pct": 0, "waste_reduction": 0, "eco_cert": False, "extra": ""},
-            "circular": {"takeback": 0, "packaging": 0, "suppliers": 0, "extra": ""}
+            "resource": {"renewable_pct": 0, "water_reuse_pct": 0, "energy_tech": 0},
+            "materials": {"recycled_pct": 0, "waste_reduction_pct": 0, "eco_cert": False},
+            "circular": {"takeback_pct": 0, "packaging_pct": 0, "suppliers_pct": 0}
         },
-        "score": 0,
-        "recommendations": []
+        "score": 0
     }
 
-# --- Scoring (Simplified) ---
-def calculate_score(data):
-    resource_score = (min(data["resource_use"]["renewable"], 100)/10 +
-                     min(data["resource_use"]["water_reuse"], 100)/10 +
-                     min(data["resource_use"]["energy_tech"], 2)*5) * 0.3
-    
-    materials_score = (min(data["materials"]["recycled_pct"], 100)/10 +
-                      min(data["materials"]["waste_reduction"], 100)/10 +
-                      10 if data["materials"]["eco_cert"] else 0) * 0.3
-    
-    circular_score = (min(data["circular"]["takeback"], 100)/10 +
-                     min(data["circular"]["packaging"], 100)/10 +
-                     min(data["circular"]["suppliers"], 100)/10) * 0.4
-    
-    return round(resource_score + materials_score + circular_score, 1)
-
-# --- PDF Extraction (Simplified) ---
+# --- Core Functions ---
 def extract_pdf_text(uploaded_file):
+    """Simple PDF text extraction"""
     try:
         with fitz.open(stream=uploaded_file.read(), filetype="pdf") as doc:
-            return "\n".join(page.get_text() for page in doc)[:150000]
-    except:
-        st.error("Failed to read PDF. Use manual input.")
+            return "\n".join(page.get_text() for page in doc)[:100000]  # Limit for GPT-3.5
+    except Exception as e:
+        st.error(f"PDF error: {str(e)[:50]}")
         return ""
 
-# --- AI Data Extraction (Simplified with Estimation) ---
-def ai_extract(text, industry):
+def ai_extract_esg(text, industry):
+    """Extract ESG data with GPT-3.5-turbo (with estimation)"""
     if not OPENAI_AVAILABLE:
         return None
 
-    prompt = f"""Analyze this {industry} company's ESG report. 
-    Extract/provide estimates for:
-    - Renewable energy % (0-100)
-    - Water reuse % (0-100)
-    - Number of energy-saving technologies
-    - Recycled materials % (0-100)
-    - Waste reduction % vs last year (0-100)
-    - Eco-certified products? (yes/no)
-    - Product take-back program % (0-100)
-    - Sustainable packaging % (0-100)
-    - Sustainable suppliers % (0-100)
-    Explain estimates briefly.
-    Return as JSON with keys: renewable, water_reuse, energy_tech, recycled_pct, waste_reduction, eco_cert (bool), takeback, packaging, suppliers, extra."""
+    prompt = f"""Extract environmental data for a {industry} company from this text.
+    If data is missing, ESTIMATE using context. Return ONLY JSON with:
+    {{
+        "resource": {{
+            "renewable_pct": 0-100 (renewable energy %),
+            "water_reuse_pct": 0-100 (water reuse %),
+            "energy_tech": number (energy-saving technologies count)
+        }},
+        "materials": {{
+            "recycled_pct": 0-100 (recycled materials %),
+            "waste_reduction_pct": 0-100 (waste reduction vs last year %),
+            "eco_cert": true/false (eco-certified products)
+        }},
+        "circular": {{
+            "takeback_pct": 0-100 (product take-back %),
+            "packaging_pct": 0-100 (sustainable packaging %),
+            "suppliers_pct": 0-100 (sustainable suppliers %)
+        }}
+    }}"""
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": f"{prompt}\n\nReport: {text}"}],
+            model="gpt-3.5-turbo",  # Explicitly use GPT-3.5-turbo
+            messages=[{"role": "user", "content": f"{prompt}\n\nText: {text}"}],
             temperature=0.3,
-            timeout=30
+            timeout=20
         )
-        return json.loads(response.choices[0].message.content)
-    except:
+        return json.loads(response.choices[0].message.content.strip())
+    except Exception as e:
+        st.error(f"AI extraction failed: {str(e)[:50]}")
         return None
 
-# --- Main Workflow ---
+def calculate_score(data):
+    """Simple scoring logic"""
+    resource_score = (data["resource"]["renewable_pct"] * 0.1 +
+                     data["resource"]["water_reuse_pct"] * 0.1 +
+                     min(data["resource"]["energy_tech"], 5) * 2) * 0.3
+    
+    materials_score = (data["materials"]["recycled_pct"] * 0.1 +
+                      data["materials"]["waste_reduction_pct"] * 0.1 +
+                      10 if data["materials"]["eco_cert"] else 0) * 0.3
+    
+    circular_score = (data["circular"]["takeback_pct"] * 0.1 +
+                     data["circular"]["packaging_pct"] * 0.1 +
+                     data["circular"]["suppliers_pct"] * 0.1) * 0.4
+    
+    return min(100, round(resource_score + materials_score + circular_score, 1))
+
+# --- Workflow Logic ---
 state = st.session_state.state
 
-# Step 1: Start (Upload or Manual)
+# Step 1: Start (Upload PDF or Manual Input)
 if state["step"] == "start":
-    st.subheader("How would you like to proceed?")
-    col1, col2 = st.columns(2)
-    with col1:
-        uploaded_pdf = st.file_uploader("Upload ESG Report (PDF)", type="pdf")
-        if uploaded_pdf:
-            text = extract_pdf_text(uploaded_pdf)
-            if text:
-                state["step"] = "industry"
-                st.success("PDF uploaded! Now tell us your industry.")
-                st.rerun()
-    with col2:
-        if st.button("Enter Data Manually"):
-            state["step"] = "industry"
+    st.subheader("Choose Input Method")
+    
+    # PDF Upload Option
+    st.subheader("Option 1: Upload ESG Report (PDF)")
+    uploaded_pdf = st.file_uploader("Select PDF", type="pdf")
+    if uploaded_pdf:
+        state["pdf_text"] = extract_pdf_text(uploaded_pdf)
+        if state["pdf_text"]:
+            state["step"] = "input"
+            st.success("PDF loaded! Enter industry below.")
             st.rerun()
-
-# Step 2: Enter Industry
-elif state["step"] == "industry":
-    st.subheader("Your Industry")
-    industry = st.text_input("What industry is your company in? (e.g., Manufacturing, Retail)")
-    if industry:
-        state["industry"] = industry
-        state["step"] = "questions"
+    
+    # Manual Input Option
+    st.subheader("Option 2: Enter Data Manually")
+    if st.button("Start Manual Input"):
+        state["step"] = "input"
         st.rerun()
 
-# Step 3: Enter Data (Manual or AI)
-elif state["step"] == "questions":
-    st.subheader(f"Tell us about {state['company'] or 'your company'}'s efforts")
-    
-    # If AI extraction is possible
-    if OPENAI_AVAILABLE and "pdf_text" in state:
-        with st.spinner("Analyzing report..."):
-            ai_data = ai_extract(state["pdf_text"], state["industry"])
-            if ai_data:
-                state["data"] = {
-                    "resource_use": {
-                        "renewable": ai_data.get("renewable", 0),
-                        "water_reuse": ai_data.get("water_reuse", 0),
-                        "energy_tech": ai_data.get("energy_tech", 0),
-                        "extra": ai_data.get("extra", "")
-                    },
-                    "materials": {
-                        "recycled_pct": ai_data.get("recycled_pct", 0),
-                        "waste_reduction": ai_data.get("waste_reduction", 0),
-                        "eco_cert": ai_data.get("eco_cert", False),
-                        "extra": ""
-                    },
-                    "circular": {
-                        "takeback": ai_data.get("takeback", 0),
-                        "packaging": ai_data.get("packaging", 0),
-                        "suppliers": ai_data.get("suppliers", 0),
-                        "extra": ""
-                    }
-                }
-                state["step"] = "results"
-                st.rerun()
+# Step 2: Input Data (Industry + AI/Manual)
+elif state["step"] == "input":
+    st.subheader("Company Details")
+    state["company"] = st.text_input("Company Name", state["company"])
+    state["industry"] = st.text_input("Industry (e.g., Manufacturing)", state["industry"])
 
-    # Manual input form
-    with st.form("sustainability_form"):
-        st.subheader("Resource Use")
-        ren = st.slider("Renewable energy %", 0, 100, 0)
-        water = st.slider("Water reuse %", 0, 100, 0)
-        tech = st.number_input("Energy-saving technologies (count)", 0, 10, 0)
+    # If PDF was uploaded, try AI extraction with GPT-3.5
+    if state["pdf_text"] and OPENAI_AVAILABLE and state["industry"]:
+        if st.button("Analyze PDF with AI (GPT-3.5)"):
+            with st.spinner("Analyzing with GPT-3.5..."):
+                extracted = ai_extract_esg(state["pdf_text"], state["industry"])
+                if extracted:
+                    state["data"] = extracted
+                    state["score"] = calculate_score(state["data"])
+                    state["step"] = "results"
+                    st.rerun()
 
-        st.subheader("Materials & Waste")
-        recycled = st.slider("Recycled materials %", 0, 100, 0)
-        waste = st.slider("Waste reduction % (vs last year)", 0, 100, 0)
-        eco = st.checkbox("Eco-certified products")
+    # Manual Input Form
+    st.subheader("Enter Data Manually (if no PDF)")
+    with st.form("manual_input"):
+        st.write("### Resource Use")
+        ren_pct = st.slider("Renewable Energy %", 0, 100, 0)
+        water_pct = st.slider("Water Reuse %", 0, 100, 0)
+        energy_tech = st.number_input("Energy-Saving Technologies (count)", 0, 10, 0)
 
-        st.subheader("Circular Practices")
-        takeback = st.slider("Product take-back %", 0, 100, 0)
-        packaging = st.slider("Sustainable packaging %", 0, 100, 0)
-        suppliers = st.slider("Sustainable suppliers %", 0, 100, 0)
+        st.write("### Materials & Waste")
+        recycled_pct = st.slider("Recycled Materials %", 0, 100, 0)
+        waste_pct = st.slider("Waste Reduction % (vs last year)", 0, 100, 0)
+        eco_cert = st.checkbox("Has Eco-Certified Products")
+
+        st.write("### Circular Practices")
+        takeback_pct = st.slider("Product Take-Back %", 0, 100, 0)
+        packaging_pct = st.slider("Sustainable Packaging %", 0, 100, 0)
+        suppliers_pct = st.slider("Sustainable Suppliers %", 0, 100, 0)
 
         if st.form_submit_button("Calculate Score"):
             state["data"] = {
-                "resource_use": {"renewable": ren, "water_reuse": water, "energy_tech": tech, "extra": ""},
-                "materials": {"recycled_pct": recycled, "waste_reduction": waste, "eco_cert": eco, "extra": ""},
-                "circular": {"takeback": takeback, "packaging": packaging, "suppliers": suppliers, "extra": ""}
+                "resource": {"renewable_pct": ren_pct, "water_reuse_pct": water_pct, "energy_tech": energy_tech},
+                "materials": {"recycled_pct": recycled_pct, "waste_reduction_pct": waste_pct, "eco_cert": eco_cert},
+                "circular": {"takeback_pct": takeback_pct, "packaging_pct": packaging_pct, "suppliers_pct": suppliers_pct}
             }
             state["score"] = calculate_score(state["data"])
             state["step"] = "results"
             st.rerun()
 
-# Step 4: Show Results
+# Step 3: Show Results
 elif state["step"] == "results":
-    st.subheader(f"Sustainability Score: {state['score']}/100")
-    
-    st.write("### Breakdown")
-    st.write(f"- Resource Use: {round(state['data']['resource_use']['renewable']*0.03 + state['data']['resource_use']['water_reuse']*0.03 + state['data']['resource_use']['energy_tech']*0.15, 1)}/30")
-    st.write(f"- Materials: {round(state['data']['materials']['recycled_pct']*0.03 + state['data']['materials']['waste_reduction']*0.03 + (10 if state['data']['materials']['eco_cert'] else 0)*0.3, 1)}/30")
-    st.write(f"- Circular Practices: {round(state['data']['circular']['takeback']*0.04 + state['data']['circular']['packaging']*0.04 + state['data']['circular']['suppliers']*0.04, 1)}/40")
+    st.subheader(f"{state['company'] or 'Your Company'}: Sustainability Score = {state['score']}/100")
 
-    if OPENAI_AVAILABLE:
+    st.write("### Performance Breakdown")
+    st.write(f"- Resource Use: {round((state['data']['resource']['renewable_pct'] * 0.1 + state['data']['resource']['water_reuse_pct'] * 0.1 + min(state['data']['resource']['energy_tech'], 5)*2) * 0.3, 1)}/30")
+    st.write(f"- Materials & Waste: {round((state['data']['materials']['recycled_pct'] * 0.1 + state['data']['materials']['waste_reduction_pct'] * 0.1 + (10 if state['data']['materials']['eco_cert'] else 0)) * 0.3, 1)}/30")
+    st.write(f"- Circular Practices: {round((state['data']['circular']['takeback_pct'] * 0.1 + state['data']['circular']['packaging_pct'] * 0.1 + state['data']['circular']['suppliers_pct'] * 0.1) * 0.4, 1)}/40")
+
+    # Generate recommendations with GPT-3.5 if available
+    if OPENAI_AVAILABLE and state["industry"]:
         try:
-            prompt = f"Give 3 sustainability recommendations for a {state['industry']} company with these stats: {state['data']}"
+            st.write("### Recommendations")
+            prompt = f"Give 3 specific sustainability recommendations for a {state['industry']} company with these metrics: {state['data']}. Keep them simple."
             response = client.chat.completions.create(
-                model="gpt-4o",
+                model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.4
             )
-            st.write("### Recommendations")
             st.write(response.choices[0].message.content)
-        except:
+        except Exception as e:
             st.write("### Recommendations")
-            st.write("1. Increase renewable energy adoption\n2. Reduce waste through recycling\n3. Expand sustainable packaging")
+            st.write("1. Increase renewable energy adoption\n2. Use more recycled materials\n3. Expand product take-back programs")
     else:
         st.write("### Recommendations")
-        st.write("1. Increase renewable energy adoption\n2. Reduce waste through recycling\n3. Expand sustainable packaging")
+        st.write("1. Increase renewable energy adoption\n2. Use more recycled materials\n3. Expand product take-back programs")
 
     if st.button("Start Over"):
         st.session_state.state = {
             "company": "",
             "industry": "",
             "step": "start",
+            "pdf_text": "",
             "data": {
-                "resource_use": {"renewable": 0, "water_reuse": 0, "energy_tech": 0, "extra": ""},
-                "materials": {"recycled_pct": 0, "waste_reduction": 0, "eco_cert": False, "extra": ""},
-                "circular": {"takeback": 0, "packaging": 0, "suppliers": 0, "extra": ""}
+                "resource": {"renewable_pct": 0, "water_reuse_pct": 0, "energy_tech": 0},
+                "materials": {"recycled_pct": 0, "waste_reduction_pct": 0, "eco_cert": False},
+                "circular": {"takeback_pct": 0, "packaging_pct": 0, "suppliers_pct": 0}
             },
-            "score": 0,
-            "recommendations": []
+            "score": 0
         }
         st.rerun()
