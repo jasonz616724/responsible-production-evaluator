@@ -1,43 +1,46 @@
 import streamlit as st
 import json
+import fitz  # PyMuPDF for PDF handling
 from openai import OpenAI
 import numpy as np
 
-# --- Page Configuration (Chatbot Style) ---
-st.set_page_config(page_title="SDG 12 Chatbot Evaluator", layout="centered")
-st.title("🌱 SDG 12 Chatbot Evaluator")
-st.subheader("I’ll ask 5 quick questions to assess your SDG 12 performance → Get a free feedback report!")
+# --- Page Configuration ---
+st.set_page_config(page_title="SDG 12 Chatbot", layout="wide")
+st.title("🌱 SDG 12 Production Responsibility Chatbot")
+st.write("I can help assess your SDG 12 performance! Upload an ESG report (preferred) or I'll guide you through questions.")
 
-# --- Initialize OpenAI Client (for recommendations/excerpts) ---
+# --- Initialize OpenAI Client ---
 try:
     client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
     OPENAI_AVAILABLE = True
 except KeyError:
-    st.warning("⚠️ OPENAI_API_KEY not found. AI features (recommendations) disabled.")
+    st.warning("⚠️ OPENAI_API_KEY not found. AI features (report extraction) disabled.")
     OPENAI_AVAILABLE = False
 except Exception as e:
     st.error(f"⚠️ OpenAI error: {str(e)}")
     OPENAI_AVAILABLE = False
 
-# --- Session State Initialization (Track Chat Progress & Data) ---
-if "chat_state" not in st.session_state:
-    st.session_state["chat_state"] = {
-        "round": 1,  # Tracks 5 question rounds
+# --- Session State Initialization ---
+if "chat" not in st.session_state:
+    st.session_state["chat"] = {
+        "history": [],  # Stores conversation history
+        "mode": None,  # "upload" or "manual"
         "data": {
             "company_name": "",
             "industry": "",
-            "resource_efficiency": {"renewable_energy_pct": 0, "water_reuse_pct": 0},
-            "sustainable_production": {"recycled_material_pct": 0, "waste_intensity_pct": 0},
-            "circular_economy": {"takeback_program_pct": 0, "packaging_sustainable_pct": 0},
+            "resource_efficiency": {"renewable_energy_pct": 0, "water_reuse_pct": 0, "energy_tech_count": 0},
+            "sustainable_production": {"recycled_material_pct": 0, "waste_intensity_pct": 0, "eco_design_cert": False},
+            "circular_economy": {"takeback_program_pct": 0, "packaging_sustainable_pct": 0, "certified_supplier_pct": 0},
+            "additional_info": "",  # For final round
             "total_score": 0,
             "dimension_scores": {},
-            "recommendations": [],
-            "feedback_excerpt": ""
+            "recommendations": []
         },
-        "completed": False  # Whether 5 rounds are done
+        "manual_round": 1,  # Tracks 6 manual input rounds
+        "completed": False
     }
 
-# --- SDG 12 Scoring Framework (Simplified for Chatbot) ---
+# --- Scoring Framework ---
 DIMENSIONS = [
     {
         "id": "resource_efficiency",
@@ -45,9 +48,10 @@ DIMENSIONS = [
         "weight": 0.3,
         "actions": [
             {"name": "renewable_energy_pct", "calc": lambda x: 10 if x >=50 else 5 if x >=30 else 0},
-            {"name": "water_reuse_pct", "calc": lambda x: 10 if x >=70 else 5 if x >=40 else 0}
+            {"name": "water_reuse_pct", "calc": lambda x: 10 if x >=70 else 5 if x >=40 else 0},
+            {"name": "energy_tech_count", "calc": lambda x: min(10, x * 5)}
         ],
-        "max_subtotal": 20
+        "max_subtotal": 30
     },
     {
         "id": "sustainable_production",
@@ -55,9 +59,10 @@ DIMENSIONS = [
         "weight": 0.3,
         "actions": [
             {"name": "recycled_material_pct", "calc": lambda x: 10 if x >=40 else 5 if x >=20 else 0},
-            {"name": "waste_intensity_pct", "calc": lambda x: 10 if x <=20 else 5 if x <=40 else 0}
+            {"name": "waste_intensity_pct", "calc": lambda x: 10 if x <=20 else 5 if x <=40 else 0},
+            {"name": "eco_design_cert", "calc": lambda x: 10 if x else 0}
         ],
-        "max_subtotal": 20
+        "max_subtotal": 30
     },
     {
         "id": "circular_economy",
@@ -65,259 +70,322 @@ DIMENSIONS = [
         "weight": 0.4,
         "actions": [
             {"name": "takeback_program_pct", "calc": lambda x: 10 if x >=50 else 5 if x >=20 else 0},
-            {"name": "packaging_sustainable_pct", "calc": lambda x: 10 if x >=80 else 5 if x >=50 else 0}
+            {"name": "packaging_sustainable_pct", "calc": lambda x: 10 if x >=80 else 5 if x >=50 else 0},
+            {"name": "certified_supplier_pct", "calc": lambda x: 10 if x >=60 else 5 if x >=30 else 0}
         ],
-        "max_subtotal": 20
+        "max_subtotal": 30
     }
 ]
 
 # --- Core Functions ---
+def extract_text_from_pdf(uploaded_file):
+    """Extract text from large PDFs (up to 100k+ words)"""
+    try:
+        with fitz.open(stream=uploaded_file.read(), filetype="pdf") as doc:
+            text = ""
+            for page in doc:
+                text += page.get_text() + "\n"
+            # Return first 150k characters to respect token limits
+            return text[:150000]
+    except Exception as e:
+        st.error(f"⚠️ PDF extraction failed: {str(e)}")
+        return ""
+
+def ai_extract_esg_data(text, industry):
+    """Extract SDG 12 metrics from ESG report text"""
+    if not OPENAI_AVAILABLE:
+        return None
+
+    prompt = f"""Extract SDG 12 production metrics from this ESG report (Industry: {industry}).
+    Return ONLY a JSON object with these fields (use 0 for missing data, true/false for booleans):
+    {{
+        "company_name": "Company name (string)",
+        "resource_efficiency": {{
+            "renewable_energy_pct": number (0-100),
+            "water_reuse_pct": number (0-100),
+            "energy_tech_count": number (0+)
+        }},
+        "sustainable_production": {{
+            "recycled_material_pct": number (0-100),
+            "waste_intensity_pct": number (0+),
+            "eco_design_cert": boolean
+        }},
+        "circular_economy": {{
+            "takeback_program_pct": number (0-100),
+            "packaging_sustainable_pct": number (0-100),
+            "certified_supplier_pct": number (0-100)
+        }}
+    }}
+    Report text: {text}"""
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo-16k",  # Handles large context
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2
+        )
+        return json.loads(response.choices[0].message.content)
+    except Exception as e:
+        st.error(f"⚠️ Data extraction failed: {str(e)}")
+        return None
+
 def calculate_score():
-    """Calculate SDG 12 score using collected chat data"""
-    data = st.session_state["chat_state"]["data"]
+    """Calculate SDG 12 score from collected data"""
+    data = st.session_state["chat"]["data"]
     dimension_scores = {}
     total_score = 0
 
     for dim in DIMENSIONS:
-        # Calculate subtotal for each dimension
         dim_data = data[dim["id"]]
-        action_subtotal = sum([action["calc"](dim_data[action["name"]]) for action in dim["actions"]])
-        
-        # Weighted score (total = 100)
-        weighted_score = round(action_subtotal * dim["weight"], 1)
+        subtotal = sum([action["calc"](dim_data[action["name"]]) for action in dim["actions"]])
+        weighted_score = round(subtotal * dim["weight"], 1)
         dimension_scores[dim["id"]] = {
             "name": dim["name"],
-            "subtotal": action_subtotal,
-            "weighted_score": weighted_score,
-            "max_weighted": round(dim["max_subtotal"] * dim["weight"], 1)
+            "score": weighted_score,
+            "max": round(dim["max_subtotal"] * dim["weight"], 1)
         }
         total_score += weighted_score
 
-    # Update session state with scores
     data["dimension_scores"] = dimension_scores
-    data["total_score"] = min(100, round(total_score, 1))  # Cap at 100
-    st.session_state["chat_state"]["data"] = data
+    data["total_score"] = min(100, round(total_score, 1))
+    st.session_state["chat"]["data"] = data
 
-def generate_feedback():
-    """Generate industry-specific recommendations and feedback excerpt"""
-    data = st.session_state["chat_state"]["data"]
-    company_name = data["company_name"]
-    industry = data["industry"]
-    scores = data["dimension_scores"]
+def generate_recommendations():
+    """Generate tailored recommendations"""
+    data = st.session_state["chat"]["data"]
+    if not OPENAI_AVAILABLE:
+        return [
+            "1. Increase renewable energy adoption to improve SDG 12.2 performance.",
+            "2. Enhance circular economy practices (e.g., product take-back programs).",
+            "3. Reduce waste intensity through process optimization."
+        ]
 
-    # Identify strengths/areas for improvement
-    strengths = [v["name"] for v in scores.values() if v["weighted_score"] >= v["max_weighted"] * 0.7]
-    improvements = [v["name"] for v in scores.values() if v["weighted_score"] < v["max_weighted"] * 0.5]
+    prompt = f"""Generate 3 SDG 12 recommendations for {data['company_name']} ({data['industry']}).
+    Scores: {data['dimension_scores']}
+    Additional info: {data['additional_info']}
+    Link each to a specific SDG 12 target and include measurable actions."""
 
-    # Fallback if AI is unavailable
-    fallback_recs = [
-        f"1. Increase renewable energy to 50% by 2026 (SDG 12.2) – Cuts carbon emissions and aligns with {industry} sector trends.",
-        f"2. Boost recycled material use to 40% (SDG 12.3) – Reduces virgin material reliance and lowers production costs.",
-        f"3. Expand product take-back programs to 50% of lines (SDG 12.5) – Enhances circularity and customer loyalty."
-    ]
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.4
+    )
+    return [line.strip() for line in response.choices[0].message.content.split("\n") if line.strip()]
 
-    # AI-generated recommendations (industry-specific)
-    if OPENAI_AVAILABLE:
-        prompt = f"""Generate 3 SDG 12 recommendations for {company_name} ({industry} industry).
-        Strengths: {strengths if strengths else ['Resource efficiency']}
-        Improvements: {improvements if improvements else ['Circular economy']}
-        Include SDG 12 target, measurable goal, and impact. Number them (1., 2., 3.)."""
-        
-        response = OpenAI().chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.4
-        )
-        recs = [line.strip() for line in response.choices[0].message.content.split("\n") if line.strip() and line[0].isdigit()]
-        data["recommendations"] = recs if recs else fallback_recs
-    else:
-        data["recommendations"] = fallback_recs
+def format_feedback():
+    """Format final feedback document"""
+    data = st.session_state["chat"]["data"]
+    feedback = f"SDG 12 Performance Report for {data['company_name']}\n"
+    feedback += f"Industry: {data['industry']}\n"
+    feedback += f"Total Score: {data['total_score']}/100\n\n"
 
-    # Generate feedback excerpt
-    data["feedback_excerpt"] = f"""
-    # SDG 12 Performance Feedback Report
-    ## Company: {company_name} | Industry: {industry}
-    ## Total Score: {data['total_score']}/100
+    feedback += "Dimension Scores:\n"
+    for dim in data["dimension_scores"].values():
+        feedback += f"- {dim['name']}: {dim['score']}/{dim['max']}\n"
 
-    ### 1. Dimension Breakdown
-    """
-    for dim_id, dim_data in scores.items():
-        data["feedback_excerpt"] += f"- {dim_data['name']}: {dim_data['weighted_score']}/{dim_data['max_weighted']}\n"
-    
-    data["feedback_excerpt"] += f"""
-    ### 2. Key Strengths
-    {', '.join(strengths) if strengths else 'No major strengths identified – focus on recommendations below.'}
+    feedback += "\nRecommendations:\n"
+    for i, rec in enumerate(data["recommendations"], 1):
+        feedback += f"{i}. {rec}\n"
 
-    ### 3. Areas for Improvement
-    {', '.join(improvements) if improvements else 'All dimensions are on track – aim for higher targets!'}
+    if data["additional_info"]:
+        feedback += f"\nAdditional Context Provided: {data['additional_info']}"
 
-    ### 4. Actionable Recommendations
-    """
-    for rec in data["recommendations"]:
-        data["feedback_excerpt"] += f"- {rec}\n"
-    
-    data["feedback_excerpt"] += f"""
-    ### 5. Next Steps
-    1. Review your scores against {industry} sector benchmarks (e.g., average renewable energy use: 35%).
-    2. Prioritize 1-2 recommendations (e.g., start with sustainable packaging if scores are low).
-    3. Reassess in 6 months to track progress toward SDG 12 targets.
-    """
-    st.session_state["chat_state"]["data"] = data
+    return feedback
 
-# --- Chatbot Logic (5 Rounds) ---
-chat = st.session_state["chat_state"]
+# --- Chat Interface ---
+def add_message(role, content):
+    """Add message to chat history"""
+    st.session_state["chat"]["history"].append({"role": role, "content": content})
 
-# Round 1: Company Name & Industry
-if chat["round"] == 1 and not chat["completed"]:
-    st.write("**Round 1/5: Let’s start with basics!**")
-    col1, col2 = st.columns(2)
-    with col1:
-        company_name = st.text_input("What’s your company name?", key="round1_name")
-    with col2:
-        industries = ["Manufacturing", "Retail", "Transport", "Food & Beverage", "Construction", "Tourism", "Healthcare", "Other"]
-        industry = st.selectbox("What industry are you in?", industries, key="round1_industry")
-    
-    if st.button("Next →", key="round1_next"):
-        if company_name.strip() and industry:
-            chat["data"]["company_name"] = company_name.strip()
-            chat["data"]["industry"] = industry
-            chat["round"] = 2
+def display_chat():
+    """Display chat history"""
+    for msg in st.session_state["chat"]["history"]:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+
+# --- Main Logic ---
+chat = st.session_state["chat"]
+
+# Initial state: Ask for upload or manual input
+if not chat["mode"] and not chat["completed"]:
+    add_message("assistant", "Would you like to upload an ESG report (I'll extract data automatically) or provide information manually?")
+    display_chat()
+
+    # Upload option (default)
+    uploaded_file = st.chat_input("Upload your ESG report (PDF) or type 'manual' to enter info yourself")
+    if uploaded_file is not None:
+        if hasattr(uploaded_file, "name") and uploaded_file.name.endswith(".pdf"):
+            add_message("user", "I uploaded my ESG report.")
+            with st.spinner("Extracting data from your report..."):
+                pdf_text = extract_text_from_pdf(uploaded_file)
+                if pdf_text:
+                    # Get industry first for better extraction
+                    add_message("assistant", "Thanks! What industry is your company in? (e.g., Manufacturing, Retail)")
+                    chat["mode"] = "upload_waiting_industry"
+                else:
+                    add_message("assistant", "I couldn't extract text from the PDF. Let's try manual input instead?")
+                    chat["mode"] = None
             st.rerun()
-        else:
-            st.warning("Please enter both company name and industry!")
+        elif uploaded_file.lower() == "manual":
+            chat["mode"] = "manual"
+            add_message("user", "I'll provide information manually.")
+            add_message("assistant", "Great! Let's start with your company name?")
+            st.rerun()
 
-# Round 2: Resource Efficiency (Renewable Energy + Water Reuse)
-elif chat["round"] == 2 and not chat["completed"]:
-    st.write(f"**Round 2/5: Hi {chat['data']['company_name']}! Let’s talk resources.**")
-    st.write("(Enter percentages as numbers, e.g., 40 = 40%)")
-    col1, col2 = st.columns(2)
-    with col1:
-        renewable_pct = st.number_input(
-            "What % of your energy comes from renewable sources (solar/wind)?",
-            min_value=0, max_value=100, key="round2_renewable"
-        )
-    with col2:
-        water_pct = st.number_input(
-            "What % of your water is reused/recycled (vs. total consumption)?",
-            min_value=0, max_value=100, key="round2_water"
-        )
-    
-    if st.button("Next →", key="round2_next"):
-        chat["data"]["resource_efficiency"]["renewable_energy_pct"] = renewable_pct
-        chat["data"]["resource_efficiency"]["water_reuse_pct"] = water_pct
-        chat["round"] = 3
+# Handle upload mode (waiting for industry)
+elif chat["mode"] == "upload_waiting_industry" and not chat["completed"]:
+    display_chat()
+    industry = st.chat_input("Please enter your industry:")
+    if industry:
+        add_message("user", f"Our industry is {industry}.")
+        with st.spinner("Analyzing your report..."):
+            pdf_text = extract_text_from_pdf(st.session_state.get("uploaded_file"))  # Retrieve from state
+            extracted_data = ai_extract_esg_data(pdf_text, industry)
+            if extracted_data:
+                chat["data"]["company_name"] = extracted_data.get("company_name", "Unknown")
+                chat["data"]["industry"] = industry
+                chat["data"]["resource_efficiency"] = extracted_data.get("resource_efficiency", {})
+                chat["data"]["sustainable_production"] = extracted_data.get("sustainable_production", {})
+                chat["data"]["circular_economy"] = extracted_data.get("circular_economy", {})
+                
+                add_message("assistant", f"I've extracted data for {chat['data']['company_name']}. Anything else you'd like to add about your sustainability efforts?")
+                chat["mode"] = "upload_final"
+            else:
+                add_message("assistant", "I couldn't extract valid data. Let's switch to manual input. What's your company name?")
+                chat["mode"] = "manual"
         st.rerun()
 
-# Round 3: Sustainable Production (Recycled Materials + Waste Intensity)
-elif chat["round"] == 3 and not chat["completed"]:
-    st.write("**Round 3/5: Let’s dive into production.**")
-    st.write("(Enter percentages as numbers, e.g., 30 = 30%)")
-    col1, col2 = st.columns(2)
-    with col1:
-        recycled_pct = st.number_input(
-            "What % of your production materials are recycled/upcycled?",
-            min_value=0, max_value=100, key="round3_recycled"
-        )
-    with col2:
-        waste_intensity = st.number_input(
-            "How does your waste intensity compare to the industry average? (Enter %: 20 = 20% below average, 50 = 50% above)",
-            min_value=0, max_value=200, key="round3_waste"
-        )
-    
-    if st.button("Next →", key="round3_next"):
-        chat["data"]["sustainable_production"]["recycled_material_pct"] = recycled_pct
-        chat["data"]["sustainable_production"]["waste_intensity_pct"] = waste_intensity
-        chat["round"] = 4
-        st.rerun()
-
-# Round 4: Circular Economy (Take-Back Programs + Sustainable Packaging)
-elif chat["round"] == 4 and not chat["completed"]:
-    st.write("**Round 4/5: Almost there! Let’s talk circularity.**")
-    st.write("(Enter percentages as numbers, e.g., 25 = 25%)")
-    col1, col2 = st.columns(2)
-    with col1:
-        takeback_pct = st.number_input(
-            "What % of your product lines have a take-back/recycling program?",
-            min_value=0, max_value=100, key="round4_takeback"
-        )
-    with col2:
-        packaging_pct = st.number_input(
-            "What % of your packaging is sustainable (recyclable/compostable)?",
-            min_value=0, max_value=100, key="round4_packaging"
-        )
-    
-    if st.button("Next →", key="round4_next"):
-        chat["data"]["circular_economy"]["takeback_program_pct"] = takeback_pct
-        chat["data"]["circular_economy"]["packaging_sustainable_pct"] = packaging_pct
-        chat["round"] = 5
-        st.rerun()
-
-# Round 5: Confirmation & Score Calculation
-elif chat["round"] == 5 and not chat["completed"]:
-    st.write("**Round 5/5: Let’s confirm your data!**")
-    
-    # Show summary of collected data
-    st.write("**Your Responses:**")
-    st.write(f"- Company: {chat['data']['company_name']} | Industry: {chat['data']['industry']}")
-    st.write(f"- Renewable energy: {chat['data']['resource_efficiency']['renewable_energy_pct']}%")
-    st.write(f"- Water reuse: {chat['data']['resource_efficiency']['water_reuse_pct']}%")
-    st.write(f"- Recycled materials: {chat['data']['sustainable_production']['recycled_material_pct']}%")
-    st.write(f"- Waste intensity vs. industry: {chat['data']['sustainable_production']['waste_intensity_pct']}%")
-    st.write(f"- Product take-back: {chat['data']['circular_economy']['takeback_program_pct']}%")
-    st.write(f"- Sustainable packaging: {chat['data']['circular_economy']['packaging_sustainable_pct']}%")
-    
-    if st.button("Calculate My SDG 12 Score!", key="round5_calc"):
-        # Calculate score and generate feedback
+# Upload mode final step (additional info)
+elif chat["mode"] == "upload_final" and not chat["completed"]:
+    display_chat()
+    additional_info = st.chat_input("Enter any additional details (or 'done' to finish):")
+    if additional_info:
+        add_message("user", additional_info if additional_info.lower() != "done" else "No additional info.")
+        chat["data"]["additional_info"] = additional_info if additional_info.lower() != "done" else ""
         calculate_score()
-        generate_feedback()
+        chat["data"]["recommendations"] = generate_recommendations()
         chat["completed"] = True
         st.rerun()
 
-# Post-Completion: Show Results & Export Report
-elif chat["completed"]:
+# Manual input mode (6 rounds)
+elif chat["mode"] == "manual" and not chat["completed"]:
+    display_chat()
+    
+    # Round 1: Company name
+    if chat["manual_round"] == 1:
+        company_name = st.chat_input("What's your company name?")
+        if company_name:
+            add_message("user", company_name)
+            chat["data"]["company_name"] = company_name
+            chat["manual_round"] = 2
+            add_message("assistant", "Thanks! What industry are you in? (e.g., Manufacturing, Retail)")
+            st.rerun()
+    
+    # Round 2: Industry
+    elif chat["manual_round"] == 2:
+        industry = st.chat_input("Your industry:")
+        if industry:
+            add_message("user", industry)
+            chat["data"]["industry"] = industry
+            chat["manual_round"] = 3
+            add_message("assistant", "Great. Let's talk about resources: What percentage of your energy comes from renewable sources? (e.g., 40 for 40%)")
+            st.rerun()
+    
+    # Round 3: Resource efficiency
+    elif chat["manual_round"] == 3:
+        energy_pct = st.chat_input("Renewable energy percentage:")
+        if energy_pct and energy_pct.isdigit():
+            add_message("user", f"{energy_pct}%")
+            chat["data"]["resource_efficiency"]["renewable_energy_pct"] = int(energy_pct)
+            chat["manual_round"] = 4
+            add_message("assistant", "Got it. What percentage of water do you reuse/recycle?")
+            st.rerun()
+    
+    # Round 4: More resource metrics
+    elif chat["manual_round"] == 4:
+        water_pct = st.chat_input("Water reuse percentage:")
+        if water_pct and water_pct.isdigit():
+            add_message("user", f"{water_pct}%")
+            chat["data"]["resource_efficiency"]["water_reuse_pct"] = int(water_pct)
+            chat["manual_round"] = 5
+            add_message("assistant", "Thanks! How many energy-efficient technologies do you use? (e.g., solar panels, heat pumps)")
+            st.rerun()
+    
+    # Round 5: Production metrics
+    elif chat["manual_round"] == 5:
+        tech_count = st.chat_input("Number of energy-efficient technologies:")
+        if tech_count and tech_count.isdigit():
+            add_message("user", tech_count)
+            chat["data"]["resource_efficiency"]["energy_tech_count"] = int(tech_count)
+            chat["manual_round"] = 6
+            add_message("assistant", "Last question set: What percentage of your materials are recycled?")
+            st.rerun()
+    
+    # Round 6: Final metrics + open ended
+    elif chat["manual_round"] == 6:
+        recycled_pct = st.chat_input("Recycled materials percentage:")
+        if recycled_pct and recycled_pct.isdigit():
+            add_message("user", f"{recycled_pct}%")
+            chat["data"]["sustainable_production"]["recycled_material_pct"] = int(recycled_pct)
+            
+            # Collect remaining metrics in follow-up (conversational flow)
+            add_message("assistant", "Thanks! Any other sustainability efforts you'd like to mention? (e.g., waste reduction, packaging initiatives)")
+            chat["manual_round"] = 7
+            st.rerun()
+    
+    # Open-ended final input
+    elif chat["manual_round"] == 7:
+        additional_info = st.chat_input("Your additional sustainability details:")
+        if additional_info:
+            add_message("user", additional_info)
+            chat["data"]["additional_info"] = additional_info
+            calculate_score()
+            chat["data"]["recommendations"] = generate_recommendations()
+            chat["completed"] = True
+            st.rerun()
+
+# Display results
+if chat["completed"]:
+    display_chat()
     data = chat["data"]
-    st.success("🎉 Great! Here’s your SDG 12 performance feedback:")
     
-    # 1. Score Overview
-    st.subheader(f"Your Total SDG 12 Score: {data['total_score']}/100")
-    score_color = "#2E8B57" if data["total_score"] >= 70 else "#FFD700" if data["total_score"] >= 50 else "#DC143C"
-    st.markdown(f"<h3 style='color:{score_color}'>{['Needs Improvement', 'Good', 'Excellent'][0 if data['total_score']<50 else 1 if data['total_score']<70 else 2]}</h3>", unsafe_allow_html=True)
-    
-    # 2. Dimension Breakdown
-    st.subheader("📊 Dimension Breakdown")
-    for dim_id, dim_data in data["dimension_scores"].items():
-        st.write(f"- {dim_data['name']}: {dim_data['weighted_score']}/{dim_data['max_weighted']}")
-    
-    # 3. Recommendations
-    st.subheader("💡 Actionable Recommendations")
-    for i, rec in enumerate(data["recommendations"], 1):
-        st.write(f"{i}. {rec}")
-    
-    # 4. Download Feedback Report
-    st.subheader("📥 Download Your Full Feedback Report")
-    st.download_button(
-        label="Download TXT Report",
-        data=data["feedback_excerpt"],
-        file_name=f"{data['company_name']}_SDG12_Feedback.txt",
-        mime="text/plain",
-        use_container_width=True
-    )
-    
-    # Reset Chat
-    if st.button("Evaluate Another Company", use_container_width=True):
-        st.session_state["chat_state"] = {
-            "round": 1,
-            "data": {
-                "company_name": "",
-                "industry": "",
-                "resource_efficiency": {"renewable_energy_pct": 0, "water_reuse_pct": 0},
-                "sustainable_production": {"recycled_material_pct": 0, "waste_intensity_pct": 0},
-                "circular_economy": {"takeback_program_pct": 0, "packaging_sustainable_pct": 0},
-                "total_score": 0,
-                "dimension_scores": {},
-                "recommendations": [],
-                "feedback_excerpt": ""
-            },
-            "completed": False
-        }
-        st.rerun()
+    with st.chat_message("assistant"):
+        st.subheader(f"Your SDG 12 Performance Summary: {data['total_score']}/100")
+        
+        st.write("### Dimension Breakdown")
+        for dim in data["dimension_scores"].values():
+            st.write(f"- {dim['name']}: {dim['score']}/{dim['max']}")
+        
+        st.write("### Recommendations")
+        for i, rec in enumerate(data["recommendations"], 1):
+            st.write(f"{i}. {rec}")
+        
+        # Download report
+        feedback_text = format_feedback()
+        st.download_button(
+            "Download Full Report",
+            feedback_text,
+            f"{data['company_name']}_SDG12_Report.txt",
+            "text/plain"
+        )
+        
+        # Restart option
+        if st.button("Assess Another Company"):
+            st.session_state["chat"] = {
+                "history": [],
+                "mode": None,
+                "data": {
+                    "company_name": "",
+                    "industry": "",
+                    "resource_efficiency": {"renewable_energy_pct": 0, "water_reuse_pct": 0, "energy_tech_count": 0},
+                    "sustainable_production": {"recycled_material_pct": 0, "waste_intensity_pct": 0, "eco_design_cert": False},
+                    "circular_economy": {"takeback_program_pct": 0, "packaging_sustainable_pct": 0, "certified_supplier_pct": 0},
+                    "additional_info": "",
+                    "total_score": 0,
+                    "dimension_scores": {},
+                    "recommendations": []
+                },
+                "manual_round": 1,
+                "completed": False
+            }
+            st.rerun()
