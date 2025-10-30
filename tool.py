@@ -11,7 +11,7 @@ try:
     PDF_AVAILABLE = True
 except ImportError:
     PDF_AVAILABLE = False
-    st.warning("⚠️ PyPDF2 library not found. PDF upload functionality is disabled. Install it with: pip install PyPDF2")
+    st.warning("⚠️ PyPDF2 library not found. PDF upload disabled. Install with: pip install PyPDF2")
 
 # --- Page Configuration ---
 st.set_page_config(page_title="SDG 12 Production Evaluator", layout="wide")
@@ -21,7 +21,7 @@ try:
     client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
     OPENAI_AVAILABLE = True
 except KeyError:
-    st.warning("⚠️ OPENAI_API_KEY not found in Streamlit Secrets. AI features disabled.")
+    st.warning("⚠️ OPENAI_API_KEY not found. AI features disabled.")
     OPENAI_AVAILABLE = False
 except Exception as e:
     st.error(f"⚠️ OpenAI client error: {str(e)}")
@@ -31,14 +31,20 @@ except Exception as e:
 if "evaluation_data" not in st.session_state:
     st.session_state["evaluation_data"] = {
         "company_name": "",
-        "industry": "Manufacturing",  # Set default industry
+        "industry": "Manufacturing",
         "production_volume": 0,
         "circular_practices": [],
         "material_efficiency_checks": [False]*5,
         "waste_management_checks": [False]*5,
         "energy_efficiency_checks": [False]*5,
         "water_management_checks": [False]*5,
-        "circular_economy_checks": [False]*5
+        "circular_economy_checks": [False]*5,
+        "project_details": {  # New: For specific project data
+            "project_name": "",
+            "timeframe": "2023 Q1-Q4",
+            "investment": 0,
+            "impact_metrics": {}
+        }
     }
 if "current_step" not in st.session_state:
     st.session_state["current_step"] = 0
@@ -107,7 +113,7 @@ def get_ai_response(prompt, system_msg="You are a helpful assistant."):
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "system", "content": system_msg}, {"role": "user", "content": prompt}],
-            temperature=0.3,
+            temperature=0.2,  # Lower for factual precision
             timeout=20
         )
         return response.choices[0].message.content.strip()
@@ -116,7 +122,6 @@ def get_ai_response(prompt, system_msg="You are a helpful assistant."):
         return "Failed to generate AI response."
 
 def extract_text_from_pdf(file):
-    """Extract text from PDF with error handling"""
     if not PDF_AVAILABLE:
         return ""
     
@@ -131,87 +136,114 @@ def extract_text_from_pdf(file):
         return ""
 
 def analyze_esg_document(text):
-    prompt = f"""Analyze this ESG report text and extract SDG 12 production data:
+    prompt = f"""Extract SDG 12 production data from this ESG report:
     - Company name
     - Industry
-    - Production volume
-    - For each category, mark which criteria are met (true/false):
-    {json.dumps(SDG12_CRITERIA, indent=2)}
-    
+    - Specific sustainability projects (2023-2024) with metrics
+    - For each category, mark criteria met (true/false): {json.dumps(SDG12_CRITERIA, indent=2)}
     Return as JSON only."""
     
     try:
-        response = get_ai_response(prompt, "You are an ESG analyst specializing in SDG Goal 12.")
+        response = get_ai_response(prompt, "You are an ESG analyst specializing in SDG 12.")
         return json.loads(response)
     except Exception as e:
         st.error(f"Document analysis error: {str(e)}")
         return {}
 
 def ai_generate_mock_esg(evaluation_data):
-    """Generate company-specific ESG excerpt"""
+    """Generate ESG excerpt mimicking real corporate reports (specific project focus)"""
     if not OPENAI_AVAILABLE:
-        return """## 2023 Production Sustainability Initiative
+        return """## 3.2 Circular Production Initiative: Plastic Waste Reduction Program  
+        *Facility: Southeast Asia Manufacturing Hub | Timeframe: Jan-Dec 2023*  
 
-### Material Efficiency
-Our facility achieved a 22% reduction in virgin material usage through recycled input integration (38% of total materials), exceeding our 15% target.
+        ### Project Overview  
+        The plastic waste reduction program targeted post-production scrap and packaging waste, part of our 2025 commitment to 50% recycled material usage across product lines.  
 
-### Waste & Resource Management
-- 91% waste diversion from landfills (up from 78% in 2022)
-- 31% reduction in hazardous waste
-- 45,000 liters/month water savings via closed-loop systems
+        ### Key Achievements  
+        - Implemented in-line recycling systems for polypropylene scrap, diverting 142 metric tons (MT) from landfills—equivalent to 3.2 million plastic bottles  
+        - Achieved 38% recycled content in core product packaging (2023 target: 30%), reducing virgin plastic procurement by 22%  
+        - Partnered with local recyclers to establish closed-loop collection, resulting in 91% waste diversion from facility operations (up from 78% in 2022)  
 
-### SDG Alignment
-Results support SDG Target 12.2 (resource efficiency) and 12.5 (waste reduction). 2024 plans include scaling to 45% recycled materials with $2.8M investment.
+        ### Environmental Impact  
+        - CO₂e reduction: 287 tons (avoided from virgin plastic production and waste transport)  
+        - Water savings: 45,000 liters/month through reduced cleaning needs in recycling process  
 
-*Verified by EcoVerify (Report No. EV-23-7842)*"""
+        ### SDG Alignment  
+        Directly supports SDG Target 12.5 (substantially reduce waste generation by 2030) and Target 12.2 (sustainable management of natural resources).  
+
+        ### 2024 Expansion  
+        $2.8M investment approved to scale systems to European facilities, targeting 45% recycled content and 95% waste diversion.  
+
+        *Verified by SGS (Report Ref: ESG-23-1472 | Audit Date: Jan 2024)*"""
     
+    # Extract project-specific data
     company = evaluation_data.get("company_name", "Sustainable Manufacturing Inc.")
-    industry = evaluation_data.get("industry", "manufacturing")
+    industry = evaluation_data.get("industry", "manufacturing").lower()
+    project_name = evaluation_data["project_details"].get("project_name") or "Circular Material Optimization"
+    timeframe = evaluation_data["project_details"].get("timeframe") or "2023"
+    investment = evaluation_data["project_details"].get("investment") or 2800000  # $2.8M default
     
-    # Calculate simple achievement percentages
-    material_pct = int((sum(evaluation_data["material_efficiency_checks"]) / 5) * 100)
-    waste_pct = int((sum(evaluation_data["waste_management_checks"]) / 5) * 100)
+    # Calculate metrics from criteria checks
+    material_met = sum(evaluation_data["material_efficiency_checks"])
+    waste_met = sum(evaluation_data["waste_management_checks"])
+    recycled_pct = 30 + (material_met * 5)  # 30-55% based on checks
+    waste_diversion = 75 + (waste_met * 3)  # 75-90% based on checks
     
-    prompt = f"""Generate a 300-word ESG excerpt for {company} ({industry}) focusing on SDG 12 production efforts.
-    Include:
-    1. Material efficiency results with {material_pct}% achievement metric
-    2. Waste reduction with {waste_pct}% diversion rate
-    3. Specific SDG 12 targets (12.2, 12.5)
-    4. 2024 goals with investment figure
-    5. Third-party verification
-    Do not include company overview."""
+    # Industry-specific context
+    industry_context = {
+        "manufacturing": "machinery components",
+        "food & beverage": "packaging and processing waste",
+        "textiles": "cotton scrap and dye waste",
+        "chemicals": "by-product reprocessing",
+        "electronics": "e-waste component recovery"
+    }.get(industry, "production waste")
     
-    return get_ai_response(prompt, "You are an ESG report writer specializing in sustainable production.")
+    # AI prompt mimicking real ESG reports
+    prompt = f"""Write a 350-word ESG report excerpt for {company} about their {project_name} in {timeframe}.  
+    Follow these strict guidelines (modeled after Fortune 500 ESG reports):  
+
+    1. Structure:  
+       - Project header with location/timeframe  
+       - 1-paragraph overview (no company intro—readers know the company)  
+       - "Key Achievements" section with 3 bullet points (include {recycled_pct}% recycled content, {waste_diversion}% waste diversion, and a metric with tons/liters)  
+       - "Environmental Impact" with 2 quantifiable outcomes  
+       - "SDG Alignment" linking to specific targets (12.2, 12.5, etc.)  
+       - "2024 Plans" with ${investment:,} investment figure  
+       - Third-party verification line (auditor, report number, date)  
+
+    2. Tone: Factual, concise, technical (avoid marketing language). Use industry terms for {industry}.  
+
+    3. Context: Focus on {industry_context} (relevant to their sector).  
+
+    Example flow: Specific project details → hard metrics → impact → next steps.  
+    Do NOT include company mission, history, or general sustainability statements."""
+    
+    return get_ai_response(prompt, """You are a senior ESG report writer for multinational corporations.  
+    Write excerpts that could be directly inserted into a real ESG report—specific, data-heavy, and project-focused.""")
 
 # --- Score Calculation (0-100 Scale) ---
 def calculate_scores(evaluation_data):
     scores = {}
-    
-    # Each category has 5 criteria = 20 points per category (5×20=100 total)
     for category in SDG12_CRITERIA.keys():
         checks = evaluation_data.get(f"{category}_checks", [False]*5)
-        met_criteria = sum(checks)
-        scores[category] = met_criteria * 4  # 4 points per criterion
-    
-    # Overall score = sum of all category scores (0-100)
+        scores[category] = sum(checks) * 4  # 4 points per criterion
     scores["overall"] = sum(scores.values())
-    
     return scores
 
 # --- Report Generation ---
 def generate_recommendations(scores, evaluation_data):
     if not OPENAI_AVAILABLE:
         return [
-            "Increase recycled material usage in production processes.",
-            "Implement formal energy tracking systems.",
-            "Develop product take-back programs for circular economy."
+            f"Expand recycled material sourcing to reach {min(50, int(recycled_pct) + 10)}% by 2024.",
+            "Implement real-time waste tracking to identify additional reduction opportunities.",
+            f"Allocate {int(investment * 0.1)} for employee training on circular practices."
         ]
     
     weak_areas = [k.replace("_", " ").title() for k, v in scores.items() if v < 10 and k != "overall"]
     industry = evaluation_data.get("industry", "manufacturing")
     
-    prompt = f"Give 3 {industry}-specific SDG 12 recommendations. Weak areas: {weak_areas}"
-    response = get_ai_response(prompt, "You are a sustainability consultant.")
+    prompt = f"Give 3 {industry}-specific SDG 12 recommendations for their circular project. Weak areas: {weak_areas}. Include investment figures."
+    response = get_ai_response(prompt, "You are a sustainability consultant specializing in industrial projects.")
     return [line.strip() for line in response.split('\n') if line.strip()][:3]
 
 def generate_report():
@@ -221,11 +253,9 @@ def generate_report():
     recommendations = generate_recommendations(scores, data)
     st.session_state["custom_esg_excerpt"] = ai_generate_mock_esg(data)
     
-    # Get industry benchmark
     industry = data.get("industry", "manufacturing").lower()
     benchmark = INDUSTRY_BENCHMARKS.get(industry, 60)
     
-    # Build report
     report = []
     report.append(f"SDG Goal 12 Evaluation: {data.get('company_name', 'Unknown Company')}")
     report.append("=" * len(report[0]))
@@ -235,46 +265,26 @@ def generate_report():
     report.append("1. Overview")
     report.append(f"- Company: {data.get('company_name', 'Not provided')}")
     report.append(f"- Industry: {data.get('industry', 'Not provided')}")
-    report.append(f"- Production Volume: {data.get('production_volume', 'Not provided')}")
+    report.append(f"- Focus Project: {data['project_details'].get('project_name') or 'Circular Production Initiative'}")
     report.append("")
     
-    # ESG Excerpt
+    # ESG Excerpt (Project Focus)
     report.append("2. ESG Report Excerpt (Production Sustainability)")
     report.append(st.session_state["custom_esg_excerpt"])
     report.append("")
     
-    # Scorecard (0-100 scale)
+    # Scorecard
     report.append("3. SDG 12 Scorecard")
     report.append(f"- Overall Score: {scores['overall']}/100")
     report.append(f"- Industry Benchmark: {benchmark}/100")
     report.append("")
     for category, score in scores.items():
         if category != "overall":
-            cat_name = category.replace("_", " ").title()
-            report.append(f"- {cat_name}: {score}/20")
-    report.append("")
-    
-    # Strengths & Improvements
-    report.append("4. Key Strengths")
-    strengths = [k.replace("_", " ").title() for k, v in scores.items() if v >= 15 and k != "overall"]
-    if strengths:
-        for s in strengths:
-            report.append(f"- Strong performance in {s}")
-    else:
-        report.append("- Identify initial sustainability practices to build upon")
-    report.append("")
-    
-    report.append("5. Improvement Areas")
-    weaknesses = [k.replace("_", " ").title() for k, v in scores.items() if v < 10 and k != "overall"]
-    if weaknesses:
-        for w in weaknesses:
-            report.append(f"- {w} requires attention")
-    else:
-        report.append("- Maintain current practices and set higher targets")
+            report.append(f"- {category.replace('_', ' ').title()}: {score}/20")
     report.append("")
     
     # Recommendations
-    report.append("6. Recommendations")
+    report.append("4. Project Recommendations")
     for i, rec in enumerate(recommendations, 1):
         report.append(f"- {i}. {rec}")
     
@@ -283,10 +293,9 @@ def generate_report():
 
 # --- UI Functions ---
 def render_score_charts(scores):
-    # Create visualizations with 0-100 scale
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
     
-    # Donut chart for overall score (0-100)
+    # Donut chart for overall score
     overall_score = scores['overall']
     ax1.pie([overall_score, 100 - overall_score], 
             labels=['Achieved', 'Remaining'], 
@@ -297,7 +306,7 @@ def render_score_charts(scores):
     ax1.set_title('Overall SDG 12 Score')
     ax1.text(0, 0, f'{overall_score}/100', ha='center', va='center', fontsize=24)
     
-    # Bar chart for category scores (0-20 each)
+    # Bar chart for category scores
     categories = [k.replace("_", " ").title() for k in scores if k != "overall"]
     category_scores = [scores[k] for k in scores if k != "overall"]
     
@@ -313,35 +322,34 @@ def render_score_charts(scores):
     st.pyplot(fig)
 
 def input_step_1():
-    st.subheader("Step 1: Company Information")
+    st.subheader("Step 1: Company & Project Basics")
     col1, col2 = st.columns(2)
     with col1:
         company_name = st.text_input("Company Name", st.session_state["evaluation_data"]["company_name"])
-    with col2:
-        # Fix: Safely handle industry selection with fallback to default
-        industry_options = ["Manufacturing", "Food & Beverage", "Textiles", "Chemicals", "Electronics", "Other"]
-        current_industry = st.session_state["evaluation_data"]["industry"]
-        
-        # Ensure current industry is in options list, default to "Manufacturing" if not
-        if current_industry not in industry_options:
-            current_industry = "Manufacturing"
-            
         industry = st.selectbox(
             "Industry", 
-            industry_options,
-            index=industry_options.index(current_industry)
+            ["Manufacturing", "Food & Beverage", "Textiles", "Chemicals", "Electronics", "Other"],
+            index=["Manufacturing", "Food & Beverage", "Textiles", "Chemicals", "Electronics", "Other"].index(
+                st.session_state["evaluation_data"]["industry"]
+            )
         )
     
-    production_volume = st.number_input(
-        "Annual Production Volume (units)", 
-        value=st.session_state["evaluation_data"]["production_volume"],
-        min_value=0
-    )
+    with col2:
+        st.caption("Focus Project (for ESG excerpt)")
+        project_name = st.text_input(
+            "Project Name", 
+            st.session_state["evaluation_data"]["project_details"]["project_name"] or "Circular Production Initiative"
+        )
+        timeframe = st.text_input(
+            "Timeframe", 
+            st.session_state["evaluation_data"]["project_details"]["timeframe"]
+        )
     
     if st.button("Save & Continue"):
         st.session_state["evaluation_data"]["company_name"] = company_name
         st.session_state["evaluation_data"]["industry"] = industry
-        st.session_state["evaluation_data"]["production_volume"] = production_volume
+        st.session_state["evaluation_data"]["project_details"]["project_name"] = project_name
+        st.session_state["evaluation_data"]["project_details"]["timeframe"] = timeframe
         st.session_state["current_step"] = 2
         st.rerun()
 
@@ -380,11 +388,21 @@ def input_step_3():
             st.rerun()
 
 def input_step_4():
-    st.subheader("Step 4: Energy Efficiency")
-    checks = st.session_state["evaluation_data"]["energy_efficiency_checks"]
-    for i, criteria in enumerate(SDG12_CRITERIA["energy_efficiency"]):
-        checks[i] = st.checkbox(criteria, value=checks[i])
-    st.session_state["evaluation_data"]["energy_efficiency_checks"] = checks
+    st.subheader("Step 4: Energy & Water Efficiency")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.caption("Energy Efficiency")
+        checks = st.session_state["evaluation_data"]["energy_efficiency_checks"]
+        for i, criteria in enumerate(SDG12_CRITERIA["energy_efficiency"]):
+            checks[i] = st.checkbox(criteria, value=checks[i])
+        st.session_state["evaluation_data"]["energy_efficiency_checks"] = checks
+    
+    with col2:
+        st.caption("Water Management")
+        checks = st.session_state["evaluation_data"]["water_management_checks"]
+        for i, criteria in enumerate(SDG12_CRITERIA["water_management"]):
+            checks[i] = st.checkbox(criteria, value=checks[i])
+        st.session_state["evaluation_data"]["water_management_checks"] = checks
     
     col1, col2 = st.columns(2)
     with col1:
@@ -397,11 +415,19 @@ def input_step_4():
             st.rerun()
 
 def input_step_5():
-    st.subheader("Step 5: Water Management")
-    checks = st.session_state["evaluation_data"]["water_management_checks"]
-    for i, criteria in enumerate(SDG12_CRITERIA["water_management"]):
+    st.subheader("Step 5: Circular Economy & Investment")
+    checks = st.session_state["evaluation_data"]["circular_economy_checks"]
+    for i, criteria in enumerate(SDG12_CRITERIA["circular_economy"]):
         checks[i] = st.checkbox(criteria, value=checks[i])
-    st.session_state["evaluation_data"]["water_management_checks"] = checks
+    st.session_state["evaluation_data"]["circular_economy_checks"] = checks
+    
+    investment = st.number_input(
+        "Project Investment ($)",
+        value=st.session_state["evaluation_data"]["project_details"]["investment"] or 2800000,
+        min_value=0,
+        step=100000
+    )
+    st.session_state["evaluation_data"]["project_details"]["investment"] = investment
     
     col1, col2 = st.columns(2)
     with col1:
@@ -409,58 +435,64 @@ def input_step_5():
             st.session_state["current_step"] = 4
             st.rerun()
     with col2:
-        if st.button("Save & Continue"):
+        if st.button("Generate Report"):
+            generate_report()
             st.session_state["current_step"] = 6
             st.rerun()
 
-def input_step_6():
-    st.subheader("Step 6: Circular Economy Practices")
-    checks = st.session_state["evaluation_data"]["circular_economy_checks"]
-    for i, criteria in enumerate(SDG12_CRITERIA["circular_economy"]):
-        checks[i] = st.checkbox(criteria, value=checks[i])
-    
-    practices = st.text_input(
-        "Additional circular practices (optional)", 
-        ", ".join(st.session_state["evaluation_data"]["circular_practices"])
-    )
-    st.session_state["evaluation_data"]["circular_practices"] = [p.strip() for p in practices.split(",") if p.strip()]
-    st.session_state["evaluation_data"]["circular_economy_checks"] = checks
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Previous"):
-            st.session_state["current_step"] = 5
-            st.rerun()
-    with col2:
-        if st.button("Generate Report"):
-            generate_report()
-            st.session_state["current_step"] = 7
-            st.rerun()
-
 def render_report():
-    st.subheader("SDG Goal 12 Evaluation Report")
-    st.text(st.session_state["report_text"])
+    st.subheader(f"🌱 SDG 12 Evaluation: {st.session_state['evaluation_data']['company_name']}")
     
-    st.subheader("Score Visualization")
+    # Highlight the ESG excerpt as a report snippet
+    st.subheader("ESG Report Excerpt (Production Project)")
+    st.info(st.session_state["custom_esg_excerpt"])
+    
+    st.subheader("Score Breakdown")
     render_score_charts(st.session_state["scores"])
     
-    # Download
-    st.download_button(
-        label="Download Report",
-        data=st.session_state["report_text"],
-        file_name=f"{st.session_state['evaluation_data']['company_name']}_sdg12_evaluation.txt"
-    )
+    st.subheader("Full Evaluation")
+    st.text(st.session_state["report_text"])
     
-    # Follow-up
-    user_question = st.text_input("Ask a question about the report...")
-    if user_question and OPENAI_AVAILABLE:
-        with st.spinner("Generating answer..."):
-            response = get_ai_response(user_question, f"Answer about this report: {st.session_state['report_text']}")
-            st.write(f"**Answer:** {response}")
+    # Download options
+    col1, col2 = st.columns(2)
+    with col1:
+        st.download_button(
+            label="Download Full Report",
+            data=st.session_state["report_text"],
+            file_name=f"{st.session_state['evaluation_data']['company_name']}_sdg12_report.txt"
+        )
+    with col2:
+        st.download_button(
+            label="Download ESG Excerpt",
+            data=st.session_state["custom_esg_excerpt"],
+            file_name=f"{st.session_state['evaluation_data']['company_name']}_esg_excerpt.txt"
+        )
+    
+    if st.button("Start New Evaluation"):
+        st.session_state.clear()
+        st.session_state["evaluation_data"] = {
+            "company_name": "",
+            "industry": "Manufacturing",
+            "production_volume": 0,
+            "circular_practices": [],
+            "material_efficiency_checks": [False]*5,
+            "waste_management_checks": [False]*5,
+            "energy_efficiency_checks": [False]*5,
+            "water_management_checks": [False]*5,
+            "circular_economy_checks": [False]*5,
+            "project_details": {
+                "project_name": "",
+                "timeframe": "2023 Q1-Q4",
+                "investment": 0,
+                "impact_metrics": {}
+            }
+        }
+        st.session_state["current_step"] = 0
+        st.rerun()
 
 # --- Main UI ---
-st.title("🌱 SDG Goal 12 Production Evaluator")
-st.write("Evaluate production processes against SDG 12 (Responsible Consumption and Production)")
+st.title("🌱 SDG 12 Production Evaluator")
+st.write("Generate ESG report excerpts focused on specific sustainability projects aligned with SDG 12.")
 
 if st.session_state["current_step"] == 0:
     st.subheader("Select Input Method")
@@ -478,35 +510,43 @@ if st.session_state["current_step"] == 0:
                     result = analyze_esg_document(text)
                     if result:
                         st.session_state["evaluation_data"] = result
-                        # Ensure industry is valid if coming from PDF
                         industry_options = ["Manufacturing", "Food & Beverage", "Textiles", "Chemicals", "Electronics", "Other"]
                         if st.session_state["evaluation_data"].get("industry") not in industry_options:
                             st.session_state["evaluation_data"]["industry"] = "Manufacturing"
-                        st.session_state["current_step"] = 7
+                        st.session_state["current_step"] = 6
                         generate_report()
                         st.rerun()
     
     with col2:
         st.subheader("Manual Input")
+        st.write("Enter project details to generate a realistic ESG excerpt.")
         if st.button("Start Evaluation"):
             st.session_state["current_step"] = 1
             st.rerun()
     
-    with st.expander("View Sample ESG Excerpt"):
-        st.text("""## 2023 Production Sustainability Initiative
+    with st.expander("View Sample ESG Excerpt (Realistic Style)"):
+        st.text("""## 3.2 Circular Production Initiative: Plastic Waste Reduction Program  
+        *Facility: Southeast Asia Manufacturing Hub | Timeframe: Jan-Dec 2023*  
 
-### Material Efficiency
-Our facility achieved a 22% reduction in virgin material usage through recycled input integration (38% of total materials), exceeding our 15% target.
+        ### Project Overview  
+        The plastic waste reduction program targeted post-production scrap and packaging waste, part of our 2025 commitment to 50% recycled material usage across product lines.  
 
-### Waste & Resource Management
-- 91% waste diversion from landfills (up from 78% in 2022)
-- 31% reduction in hazardous waste
-- 45,000 liters/month water savings via closed-loop systems
+        ### Key Achievements  
+        - Implemented in-line recycling systems for polypropylene scrap, diverting 142 metric tons (MT) from landfills—equivalent to 3.2 million plastic bottles  
+        - Achieved 38% recycled content in core product packaging (2023 target: 30%), reducing virgin plastic procurement by 22%  
+        - Partnered with local recyclers to establish closed-loop collection, resulting in 91% waste diversion from facility operations (up from 78% in 2022)  
 
-### SDG Alignment
-Results support SDG Target 12.2 (resource efficiency) and 12.5 (waste reduction). 2024 plans include scaling to 45% recycled materials with $2.8M investment.
+        ### Environmental Impact  
+        - CO₂e reduction: 287 tons (avoided from virgin plastic production and waste transport)  
+        - Water savings: 45,000 liters/month through reduced cleaning needs in recycling process  
 
-*Verified by EcoVerify (Report No. EV-23-7842)*""")
+        ### SDG Alignment  
+        Directly supports SDG Target 12.5 (substantially reduce waste generation by 2030) and Target 12.2 (sustainable management of natural resources).  
+
+        ### 2024 Expansion  
+        $2.8M investment approved to scale systems to European facilities, targeting 45% recycled content and 95% waste diversion.  
+
+        *Verified by SGS (Report Ref: ESG-23-1472 | Audit Date: Jan 2024)*""")
 
 # Step navigation
 elif st.session_state["current_step"] == 1:
@@ -520,26 +560,9 @@ elif st.session_state["current_step"] == 4:
 elif st.session_state["current_step"] == 5:
     input_step_5()
 elif st.session_state["current_step"] == 6:
-    input_step_6()
-elif st.session_state["current_step"] == 7:
     render_report()
-    if st.button("Start New Evaluation"):
-        st.session_state.clear()
-        st.session_state["evaluation_data"] = {
-            "company_name": "",
-            "industry": "Manufacturing",  # Reset with valid default
-            "production_volume": 0,
-            "circular_practices": [],
-            "material_efficiency_checks": [False]*5,
-            "waste_management_checks": [False]*5,
-            "energy_efficiency_checks": [False]*5,
-            "water_management_checks": [False]*5,
-            "circular_economy_checks": [False]*5
-        }
-        st.session_state["current_step"] = 0
-        st.rerun()
 
 # Progress indicator
-if 1 <= st.session_state["current_step"] <= 6:
-    st.sidebar.progress(st.session_state["current_step"] / 6)
-    st.sidebar.write(f"Step {st.session_state['current_step']}/6")
+if 1 <= st.session_state["current_step"] <= 5:
+    st.sidebar.progress(st.session_state["current_step"] / 5)
+    st.sidebar.write(f"Step {st.session_state['current_step']}/5")
