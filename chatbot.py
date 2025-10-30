@@ -1,58 +1,61 @@
 import streamlit as st
 import json
-import fitz  # For PDF handling
-from openai import OpenAI
-import numpy as np
+import fitz  # PyMuPDF for PDF text extraction
+from openai import OpenAI, APIError, Timeout
+import re
 
-# --- Page Setup ---
-st.set_page_config(page_title="E-Composer（ESG Environmental Composer）", layout="wide")
-st.title("🌱 Production Sustainability Chatbot")
-st.write("Let’s assess your sustainability efforts! Upload an ESG report (sidebar) or answer a few questions.")
+# --- Page Configuration ---
+st.set_page_config(page_title="Sustainability Chatbot", layout="wide")
+st.title("🌱 Production Sustainability Evaluator")
+st.write("Assess your sustainability efforts—upload an ESG report (sidebar) or answer a few questions!")
 
-# --- OpenAI Setup ---
+# --- OpenAI Client Setup ---
 try:
     client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
     OPENAI_AVAILABLE = True
-except:
-    st.warning("AI features (report analysis) disabled. Use manual input.")
+except KeyError:
+    st.warning("⚠️ OpenAI API key not found. AI features (report analysis) disabled.")
+    OPENAI_AVAILABLE = False
+except Exception as e:
+    st.error(f"⚠️ OpenAI initialization failed: {str(e)}")
     OPENAI_AVAILABLE = False
 
-# --- Session State ---
+# --- Session State Initialization ---
 if "chat" not in st.session_state:
     st.session_state["chat"] = {
-        "history": [],
-        "mode": None,  # "upload" or "manual"
+        "history": [],  # Stores conversation messages
+        "mode": None,   # "upload" or "manual"
         "data": {
             "company": "",
             "industry": "",
-            # Theme 1: Resource Efficiency (aligns with 12.2)
+            # Resource efficiency metrics (aligned with 12.2)
             "resource_use": {
                 "renewable_energy_pct": 0,
                 "water_reuse_pct": 0,
-                "energy_saving_tech": 0,  # Number of technologies
-                "extra_resource": ""      # User's additional info
+                "energy_saving_tech": 0,
+                "extra_resource": ""
             },
-            # Theme 2: Waste & Materials (aligns with 12.3)
+            # Materials/waste metrics (aligned with 12.3)
             "materials_waste": {
                 "recycled_materials_pct": 0,
-                "waste_reduction_pct": 0,  # vs previous year
+                "waste_reduction_pct": 0,
                 "eco_certified_products": False,
                 "extra_materials": ""
             },
-            # Theme 3: Circular Practices (aligns with 12.5)
+            # Circular economy metrics (aligned with 12.5)
             "circular_practices": {
-                "product_takeback_pct": 0,  # % of product lines
+                "product_takeback_pct": 0,
                 "sustainable_packaging_pct": 0,
-                "supplier_sustainability_pct": 0,  # % of suppliers
+                "supplier_sustainability_pct": 0,
                 "extra_circular": ""
             },
             "total_score": 0,
             "breakdown": {},
             "recommendations": []
         },
-        "manual_round": 1,  # 4 rounds (intro + 3 themes)
+        "manual_round": 1,  # 4 rounds total
         "completed": False,
-        "pdf_text": ""
+        "pdf_text": ""  # Stored PDF text for extraction
     }
 
 # --- Scoring Framework (Hidden SDG Alignment) ---
@@ -63,7 +66,7 @@ THEMES = [
         "metrics": [
             {"key": "renewable_energy_pct", "calc": lambda x: 10 if x >=50 else 5 if x >=30 else 0},
             {"key": "water_reuse_pct", "calc": lambda x: 10 if x >=70 else 5 if x >=40 else 0},
-            {"key": "energy_saving_tech", "calc": lambda x: min(10, x * 5)}  # 0→0, 1→5, 2+→10
+            {"key": "energy_saving_tech", "calc": lambda x: min(10, x * 5)}
         ],
         "max_score": 30
     },
@@ -91,123 +94,161 @@ THEMES = [
 
 # --- Core Functions ---
 def extract_pdf_text(uploaded_file):
-    """Extract text from large PDFs (capped at 150k chars)"""
+    """Extract text from PDF (supports large files)"""
     try:
         with fitz.open(stream=uploaded_file.read(), filetype="pdf") as doc:
-            text = "".join(page.get_text() for page in doc)[:150000]
-        return text
-    except:
-        st.error("Could not read PDF. Try manual input.")
+            full_text = "\n".join(page.get_text() for page in doc)
+            return full_text[:200000]  # Limit to 200k chars for GPT-5
+    except Exception as e:
+        st.error(f"⚠️ PDF extraction failed: {str(e)} (Is the file password-protected?)")
         return ""
 
 def ai_extract_data(text, industry):
-    """Extract metrics from PDF without SDG jargon"""
+    """Extract sustainability data using GPT-5"""
     if not OPENAI_AVAILABLE:
         return None
 
     prompt = f"""analyse environmental or production related data from this report (industry: {industry}), feel free to estimate the percentages and information for the complete text below if there is no direct data.
-    Return JSON with:
-    - company: name (string)
-    - resource_use: {{renewable_energy_pct (0-100), water_reuse_pct (0-100), energy_saving_tech (0+), extra_resource (string)}}
-    - materials_waste: {{recycled_materials_pct (0-100), waste_reduction_pct (0-100), eco_certified_products (true/false), extra_materials (string)}}
-    - circular_practices: {{product_takeback_pct (0-100), sustainable_packaging_pct (0-100), supplier_sustainability_pct (0-100), extra_circular (string)}}
-    Use 0/False/"" for missing data. NO extra text."""
+    Return ONLY a valid JSON object with these fields:
+    {{
+        "company": "Company name (string, 'Unknown' if missing)",
+        "resource_use": {{
+            "renewable_energy_pct": number (0-100, % renewable energy; 0 if missing),
+            "water_reuse_pct": number (0-100, % water reused; 0 if missing),
+            "energy_saving_tech": number (count of energy-saving technologies; 0 if missing),
+            "extra_resource": "Additional resource details (string, empty if none)"
+        }},
+        "materials_waste": {{
+            "recycled_materials_pct": number (0-100, % recycled materials; 0 if missing),
+            "waste_reduction_pct": number (0-100, % waste reduced vs last year; 0 if missing),
+            "eco_certified_products": boolean (true/false for eco-certifications),
+            "extra_materials": "Additional materials/waste details (string, empty if none)"
+        }},
+        "circular_practices": {{
+            "product_takeback_pct": number (0-100, % product lines with take-back; 0 if missing),
+            "sustainable_packaging_pct": number (0-100, % sustainable packaging; 0 if missing),
+            "supplier_sustainability_pct": number (0-100, % sustainable suppliers; 0 if missing),
+            "extra_circular": "Additional circular economy details (string, empty if none)"
+        }}
+    }}"""
 
     try:
         response = client.chat.completions.create(
-            model='gpt-5',
-            messages=[{"role": "user", "content": f"{prompt}\nReport: {text}"}],
-            temperature=0.2
+            model="gpt-5",  # Use GPT-5
+            messages=[
+                {"role": "system", "content": "You are a precise data extractor. Return only JSON."},
+                {"role": "user", "content": f"{prompt}\n\nReport Text:\n{text}"}
+            ],
+            temperature=0.1,
+            response_format={"type": "json_object"},
+            timeout=60
         )
-        return json.loads(response.choices[0].message.content.strip())
-    except:
+        return json.loads(response.choices[0].message.content)
+    except json.JSONDecodeError:
+        st.error("⚠️ Could not parse GPT-5's response. Using manual input.")
+        return None
+    except (APIError, Timeout) as e:
+        st.error(f"⚠️ GPT-5 error: {str(e)}. Try manual input.")
+        return None
+    except Exception as e:
+        st.error(f"⚠️ Unexpected error: {str(e)}. Using manual input.")
         return None
 
 def calculate_score():
-    """Calculate total score from collected data"""
+    """Calculate total sustainability score"""
     data = st.session_state["chat"]["data"]
     breakdown = {}
     total = 0
 
     for theme in THEMES:
-        theme_data = data[theme["name"].lower().replace(" ", "_")]
+        theme_key = theme["name"].lower().replace(" ", "_")
+        theme_data = data[theme_key]
         score = sum(metric["calc"](theme_data[metric["key"]]) for metric in theme["metrics"])
-        weighted = round(score * theme["weight"], 1)
-        breakdown[theme["name"]] = {"score": weighted, "max": theme["max_score"] * theme["weight"]}
-        total += weighted
+        weighted_score = round(score * theme["weight"], 1)
+        breakdown[theme["name"]] = {
+            "score": weighted_score,
+            "max": round(theme["max_score"] * theme["weight"], 1)
+        }
+        total += weighted_score
 
     data["breakdown"] = breakdown
     data["total_score"] = min(100, round(total, 1))
 
 def generate_recommendations():
-    """Generate natural recommendations, introduce SDG terms here"""
+    """Generate sustainability recommendations"""
     data = st.session_state["chat"]["data"]
     if not OPENAI_AVAILABLE:
         return [
-            "Increase renewable energy use to reduce reliance on fossil fuels.",
-            "Expand recycled material adoption to lower waste.",
-            "Develop product take-back programs to extend product lifecycles."
+            "Increase renewable energy adoption to reduce environmental impact.",
+            "Expand use of recycled materials to minimize waste.",
+            "Develop product take-back programs to support circular economy."
         ]
 
-    prompt = f"""Recommend 3 sustainability actions for {data['company']} ({data['industry']}).
-    Scores: {data['breakdown']}
-    Context: {data['resource_use']['extra_resource']}; {data['materials_waste']['extra_materials']}; {data['circular_practices']['extra_circular']}
-    Link to UN Sustainable Development Goal 12 (responsible consumption/production) targets.
-    Use simple language, no jargon. Include measurable goals."""
+    prompt = f"""Generate 3 actionable sustainability recommendations for {data['company']} ({data['industry']}).
+    Use the following performance data: {data['breakdown']}
+    Consider extra context: {data['resource_use']['extra_resource']}; {data['materials_waste']['extra_materials']}; {data['circular_practices']['extra_circular']}
+    Link recommendations to responsible production goals. Keep language simple."""
 
-    response = client.chat.completions.create(
-        model='gpt-5',
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.4
-    )
-    return [line.strip() for line in response.choices[0].message.content.split("\n") if line.strip()]
+    try:
+        response = client.chat.completions.create(
+            model="gpt-5",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.4
+        )
+        return [line.strip() for line in response.choices[0].message.content.split("\n") if line.strip()]
+    except Exception:
+        return ["Prioritize energy efficiency upgrades.", "Reduce waste through material recycling.", "Strengthen supplier sustainability standards."]
 
-# --- Chat Helpers ---
+# --- Chat UI Helpers ---
 def add_msg(role, content):
+    """Add message to chat history"""
     st.session_state["chat"]["history"].append({"role": role, "content": content})
 
 def display_chat():
+    """Display chat history with avatars"""
     for msg in st.session_state["chat"]["history"]:
-        with st.chat_message(msg["role"], avatar="🤖" if role == "assistant" else "👤"):
+        avatar = "🤖" if msg["role"] == "assistant" else "👤"
+        with st.chat_message(msg["role"], avatar=avatar):
             st.write(msg["content"])
 
 # --- Main Logic ---
 chat = st.session_state["chat"]
 
 # PDF Upload (Sidebar)
-st.sidebar.subheader("Upload ESG Report (PDF)")
-uploaded_pdf = st.sidebar.file_uploader("Select PDF", type="pdf")
+st.sidebar.subheader("📄 Upload ESG Report")
+uploaded_pdf = st.sidebar.file_uploader("Select a PDF report", type="pdf")
 
+# Handle new PDF upload
 if uploaded_pdf and chat["mode"] != "upload_industry":
-    with st.spinner("Extracting report data..."):
+    with st.spinner("Extracting text from PDF..."):
         chat["pdf_text"] = extract_pdf_text(uploaded_pdf)
         if chat["pdf_text"]:
             chat["mode"] = "upload_industry"
             add_msg("user", "I uploaded our sustainability report.")
-            add_msg("assistant", "Thanks! To better analyze, what industry is your company in?")
+            add_msg("assistant", "Thanks! To better analyze, what industry is your company in? (e.g., Manufacturing, Retail)")
         st.rerun()
 
-# Upload Flow: Ask Industry
+# Upload flow: Ask for industry
 if chat["mode"] == "upload_industry" and not chat["completed"]:
     display_chat()
-    industry = st.chat_input("Your industry (e.g., Manufacturing, Retail):")
+    industry = st.chat_input("Your industry:")
     if industry:
         add_msg("user", industry)
-        with st.spinner("Analyzing report..."):
-            extracted = ai_extract_data(chat["pdf_text"], industry)
-            if extracted:
-                chat["data"] = {**chat["data"],** extracted, "industry": industry}
-                add_msg("assistant", f"Got it, {chat['data']['company']}! Anything else to share about your resource use, materials, or circular practices?")
+        with st.spinner("Analyzing report with GPT-5..."):
+            extracted_data = ai_extract_data(chat["pdf_text"], industry)
+            if extracted_data:
+                chat["data"] = {**chat["data"],** extracted_data, "industry": industry}
+                add_msg("assistant", f"Got it, {chat['data']['company']}! Any extra details about your sustainability efforts to share?")
                 chat["mode"] = "upload_final"
             else:
                 add_msg("assistant", "Let's try manual input instead. What's your company name?")
                 chat["mode"] = "manual"
         st.rerun()
 
-# Upload Flow: Final Input
+# Upload flow: Final input
 if chat["mode"] == "upload_final" and not chat["completed"]:
     display_chat()
-    extra = st.chat_input("Add any extra details (or 'done'):")
+    extra = st.chat_input("Add extra details (or 'done'):")
     if extra:
         add_msg("user", extra if extra != "done" else "No extra details.")
         chat["data"]["circular_practices"]["extra_circular"] += f" {extra}"
@@ -216,11 +257,11 @@ if chat["mode"] == "upload_final" and not chat["completed"]:
         chat["completed"] = True
         st.rerun()
 
-# Manual Flow: 4 Rounds (Themes)
+# Manual input flow
 if chat["mode"] == "manual" and not chat["completed"]:
     display_chat()
 
-    # Round 1: Intro (Company + Industry)
+    # Round 1: Company name
     if chat["manual_round"] == 1:
         company = st.chat_input("Let's start with your company name:")
         if company:
@@ -230,9 +271,9 @@ if chat["mode"] == "manual" and not chat["completed"]:
             add_msg("assistant", f"Nice to meet you, {company}! What industry are you in?")
             st.rerun()
 
-    # Round 2: Resource Use (12.2 theme)
+    # Round 2: Industry + Resource use
     elif chat["manual_round"] == 2:
-        if chat["data"]["industry"] == "":  # Collect industry first
+        if not chat["data"]["industry"]:
             industry = st.chat_input("Your industry:")
             if industry:
                 add_msg("user", industry)
@@ -243,49 +284,46 @@ if chat["mode"] == "manual" and not chat["completed"]:
 - How many energy-saving technologies do you use (e.g., LED, solar panels)?
 Feel free to add anything else about resource efficiency!""")
                 st.rerun()
-        else:  # Collect resource metrics
+        else:
             res_info = st.chat_input("Share your resource use details:")
             if res_info:
                 add_msg("user", res_info)
-                # Parse numbers (simplified; in practice, use NLP)
-                import re
+                # Simple parsing with regex
                 chat["data"]["resource_use"]["renewable_energy_pct"] = int(re.findall(r"(\d+)%.*energy", res_info)[0]) if re.findall(r"(\d+)%.*energy", res_info) else 0
                 chat["data"]["resource_use"]["water_reuse_pct"] = int(re.findall(r"(\d+)%.*water", res_info)[0]) if re.findall(r"(\d+)%.*water", res_info) else 0
-                chat["data"]["resource_use"]["energy_saving_tech"] = int(re.findall(r"(\d+).*energy-saving tech", res_info)[0]) if re.findall(r"(\d+).*energy-saving tech", res_info) else 0
+                chat["data"]["resource_use"]["energy_saving_tech"] = int(re.findall(r"(\d+).*energy-saving", res_info)[0]) if re.findall(r"(\d+).*energy-saving", res_info) else 0
                 chat["data"]["resource_use"]["extra_resource"] = res_info
                 chat["manual_round"] = 3
-                add_msg("assistant", """Great! Next, let's discuss materials and waste:
+                add_msg("assistant", """Great! Next, materials and waste:
 - What % of your materials are recycled or upcycled?
 - By what % have you reduced waste compared to last year?
 - Do you have eco-certified products? (yes/no)
-Add any other details about materials/waste!""")
+Add any other details!""")
                 st.rerun()
 
-    # Round 3: Materials & Waste (12.3 theme)
+    # Round 3: Materials & waste
     elif chat["manual_round"] == 3:
         mat_info = st.chat_input("Share your materials/waste details:")
         if mat_info:
             add_msg("user", mat_info)
-            import re
-            chat["data"]["materials_waste"]["recycled_materials_pct"] = int(re.findall(r"(\d+)%.*recycled materials", mat_info)[0]) if re.findall(r"(\d+)%.*recycled materials", mat_info) else 0
+            chat["data"]["materials_waste"]["recycled_materials_pct"] = int(re.findall(r"(\d+)%.*recycled", mat_info)[0]) if re.findall(r"(\d+)%.*recycled", mat_info) else 0
             chat["data"]["materials_waste"]["waste_reduction_pct"] = int(re.findall(r"(\d+)%.*reduce waste", mat_info)[0]) if re.findall(r"(\d+)%.*reduce waste", mat_info) else 0
             chat["data"]["materials_waste"]["eco_certified_products"] = "yes" in mat_info.lower()
             chat["data"]["materials_waste"]["extra_materials"] = mat_info
             chat["manual_round"] = 4
-            add_msg("assistant", """Thanks! Finally, let's cover circular practices:
+            add_msg("assistant", """Thanks! Finally, circular practices:
 - What % of your product lines have take-back/recycling programs?
 - What % of your packaging is sustainable (recyclable/compostable)?
 - What % of your suppliers follow sustainable practices?
-Add any other circular economy efforts!""")
+Add any other circular efforts!""")
             st.rerun()
 
-    # Round 4: Circular Practices (12.5 theme) + Open End
+    # Round 4: Circular practices
     elif chat["manual_round"] == 4:
         circ_info = st.chat_input("Share your circular practices details:")
         if circ_info:
             add_msg("user", circ_info)
-            import re
-            chat["data"]["circular_practices"]["product_takeback_pct"] = int(re.findall(r"(\d+)%.*product take-back", circ_info)[0]) if re.findall(r"(\d+)%.*product take-back", circ_info) else 0
+            chat["data"]["circular_practices"]["product_takeback_pct"] = int(re.findall(r"(\d+)%.*take-back", circ_info)[0]) if re.findall(r"(\d+)%.*take-back", circ_info) else 0
             chat["data"]["circular_practices"]["sustainable_packaging_pct"] = int(re.findall(r"(\d+)%.*packaging", circ_info)[0]) if re.findall(r"(\d+)%.*packaging", circ_info) else 0
             chat["data"]["circular_practices"]["supplier_sustainability_pct"] = int(re.findall(r"(\d+)%.*suppliers", circ_info)[0]) if re.findall(r"(\d+)%.*suppliers", circ_info) else 0
             chat["data"]["circular_practices"]["extra_circular"] = circ_info
@@ -294,26 +332,62 @@ Add any other circular economy efforts!""")
             chat["completed"] = True
             st.rerun()
 
-# Show Results
+# Display results
 if chat["completed"]:
     display_chat()
-    data = chat["data"]
-    with st.chat_message("assistant"):
-        st.subheader(f"Your Sustainability Performance: {data['total_score']}/100")
+    data = st.session_state["chat"]["data"]
+    with st.chat_message("assistant", avatar="🤖"):
+        st.subheader(f"Your Sustainability Score: {data['total_score']}/100")
+        
         st.write("### Performance Breakdown")
         for theme, stats in data["breakdown"].items():
             st.write(f"- {theme}: {stats['score']}/{stats['max']}")
+        
         st.write("### Recommendations")
         for i, rec in enumerate(data["recommendations"], 1):
             st.write(f"{i}. {rec}")
-        st.download_button("Download Report", json.dumps(data, indent=2), "sustainability_report.txt")
-        if st.button("Restart"):
-            st.session_state["chat"] = {**st.session_state["chat"], "history": [], "mode": None, "completed": False, "manual_round": 1}
+        
+        # Download report
+        report = f"""Sustainability Report for {data['company']}
+Industry: {data['industry']}
+Total Score: {data['total_score']}/100
+
+Breakdown:
+{json.dumps(data['breakdown'], indent=2)}
+
+Recommendations:
+{chr(10).join([f"{i}. {r}" for i, r in enumerate(data['recommendations'], 1)])}
+"""
+        st.download_button(
+            "Download Full Report",
+            report,
+            f"{data['company']}_sustainability_report.txt",
+            "text/plain"
+        )
+        
+        if st.button("Assess Another Company"):
+            st.session_state["chat"] = {
+                "history": [],
+                "mode": None,
+                "data": {
+                    "company": "",
+                    "industry": "",
+                    "resource_use": {"renewable_energy_pct": 0, "water_reuse_pct": 0, "energy_saving_tech": 0, "extra_resource": ""},
+                    "materials_waste": {"recycled_materials_pct": 0, "waste_reduction_pct": 0, "eco_certified_products": False, "extra_materials": ""},
+                    "circular_practices": {"product_takeback_pct": 0, "sustainable_packaging_pct": 0, "supplier_sustainability_pct": 0, "extra_circular": ""},
+                    "total_score": 0,
+                    "breakdown": {},
+                    "recommendations": []
+                },
+                "manual_round": 1,
+                "completed": False,
+                "pdf_text": ""
+            }
             st.rerun()
 
-# Initial Prompt (No Mode)
+# Initial prompt (no mode selected)
 if chat["mode"] is None and not chat["completed"] and not uploaded_pdf:
-    add_msg("assistant", "Hi! I’m here to help assess your sustainability efforts. You can upload an ESG report (sidebar) or type 'start' to answer questions.")
+    add_msg("assistant", "Hi! I can assess your sustainability efforts. Upload an ESG report (sidebar) or type 'start' to answer questions.")
     display_chat()
     if st.chat_input("Type 'start' to begin:") == "start":
         add_msg("user", "Let's start with questions.")
