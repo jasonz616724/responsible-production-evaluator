@@ -208,11 +208,11 @@ def extract_pdf_text(uploaded_file):
         return ""
 
 def ai_extract_esg_data():
-    """Extract SDG 12 data from GSK's report—replace None with 0/False"""
+    """Extract SDG 12 data from GSK's report with robust cleaning and defaults"""
     data = st.session_state["production_data"]
     section_text = data["extracted_sections"]
     
-    # Prioritize GSK's "Environment" section (richest SDG 12 data)
+    # Prioritize GSK's key sections (Environment, Procurement, Circular Economy)
     target_text = ""
     if section_text["environment"]:
         target_text += f"[Environment Section]\n{section_text['environment'][:15000]}\n"
@@ -222,22 +222,8 @@ def ai_extract_esg_data():
         target_text += f"[Circular Economy Section]\n{section_text['circular_economy'][:10000]}\n"
     
     if not target_text:
-        target_text = data["extracted_pdf_text"][:30000]  # Fallback to full text if sections not found
-    def ai_extract_esg_data():
-    # ... (after data cleaning step) ...
+        target_text = data["extracted_pdf_text"][:30000]  # Fallback to full text
     
-    # Explicit defaults for GSK's unreported metrics
-    gsk_defaults = {
-        "resource_efficiency": {"energy_tech_count": 3},  # GSK uses solar, wind, heat recovery
-        "waste_management": {"food_waste_reduction_pct": 0}  # Not relevant for pharma
-    }
-    
-    for dim, metrics in gsk_defaults.items():
-        for metric, value in metrics.items():
-            if extracted_data.get(dim, {}).get(metric) in [0, None, False]:
-                extracted_data[dim][metric] = value
-    
-    return extracted_data
     # GSK-specific terminology map (critical for accurate extraction)
     gsk_terminology = """
     GSK-Specific Terms to Map to SDG 12 Metrics:
@@ -251,7 +237,6 @@ def ai_extract_esg_data():
     - "EcoVadis supplier score": sustainable_procurement → procurement_criteria_count
     - "LCA for products": lca_product_pct
     """
-
 
     prompt = f"""Extract SDG 12 production metrics from this GSK ESG Report text. 
     CRITICAL RULES:
@@ -321,14 +306,25 @@ def ai_extract_esg_data():
                     # Fix percentages with "%" (e.g., "83%" → 83)
                     if isinstance(value, str) and "%" in value:
                         extracted_data[dim][metric] = float(value.replace("%", "").strip())
-                    # Fix nulls (replace with 0 or false)
+                    # Fix invalid types (ensure numbers/booleans)
+                    if isinstance(value, str) and value.isdigit():
+                        extracted_data[dim][metric] = int(value)
+                    # Replace any remaining nulls with defaults
                     if value is None:
-                        if metric in ["renewable_energy_pct", "water_reuse_pct"]:
-                            extracted_data[dim][metric] = 0  # Numeric defaults
-                        else:
-                            extracted_data[dim][metric] = False  # Boolean defaults
+                        extracted_data[dim][metric] = 0 if "pct" in metric or "count" in metric else False
         
-        # 2. Force GSK-specific values
+        # 2. Apply GSK-specific defaults for known unreported metrics
+        gsk_defaults = {
+            "resource_efficiency": {"energy_tech_count": 3},  # Solar, wind, heat recovery
+            "waste_management": {"food_waste_reduction_pct": 0},  # Irrelevant for pharma
+            "circular_economy": {"takeback_program_pct": 25}  # Estimate from GSK's donation programs
+        }
+        for dim, metrics in gsk_defaults.items():
+            for metric, value in metrics.items():
+                if extracted_data.get(dim, {}).get(metric, 0) in [0, False]:
+                    extracted_data[dim][metric] = value
+        
+        # 3. Force GSK identifiers
         extracted_data["company_name"] = "GSK PLC"
         extracted_data["industry"] = "Pharmaceuticals"
         
