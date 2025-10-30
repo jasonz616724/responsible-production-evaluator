@@ -115,7 +115,7 @@ def ai_extract_data(text, industry):
 
     try:
         response = client.chat.completions.create(
-            model=""gpt-5"",
+            model='gpt-5',
             messages=[{"role": "user", "content": f"{prompt}\nReport: {text}"}],
             temperature=0.2
         )
@@ -156,7 +156,7 @@ def generate_recommendations():
     Use simple language, no jargon. Include measurable goals."""
 
     response = client.chat.completions.create(
-        model=""gpt-5"",
+        model='gpt-5',
         messages=[{"role": "user", "content": prompt}],
         temperature=0.4
     )
