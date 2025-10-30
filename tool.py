@@ -9,12 +9,12 @@ import json
 from openai import OpenAI
 import numpy as np
 
-# --- Page Configuration ---
+# --- Page Configuration (Neutral Branding) ---
 st.set_page_config(page_title="SDG 12 Production Responsibility Evaluator", layout="wide")
 plt.rcParams['font.sans-serif'] = ['Arial', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
-# --- Initialize OpenAI Client ---
+# --- Initialize OpenAI Client (Generalized) ---
 try:
     client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
     OPENAI_AVAILABLE = True
@@ -25,14 +25,14 @@ except Exception as e:
     st.error(f"⚠️ OpenAI client error: {str(e)}")
     OPENAI_AVAILABLE = False
 
-# --- Session State Initialization (No GSK Defaults—Neutral Baseline) ---
+# --- Session State Initialization (100% Neutral) ---
 if "production_data" not in st.session_state:
     st.session_state["production_data"] = {
         "Company Name": "Enter Company Name",
-        "Industry": "Manufacturing",  # Neutral default (adjustable)
+        "Industry": "Manufacturing",  # Neutral default
         "extracted_pdf_text": "",
-        "extracted_sections": {},  # Stores GSK's key chapters (Environment, Procurement)
-        # Core Dimensions Data (Neutral Defaults)
+        "extracted_sections": {},  # Stores key ESG chapters (Environment, Circular Economy)
+        # Core SDG 12 Dimensions (Universal Metrics)
         "resource_efficiency": {"renewable_energy_pct": 0, "energy_tech_count": 0, "water_reuse_pct": 0, "ai_score": 0},
         "sustainable_production": {"recycled_material_pct": 0, "waste_intensity_pct": 0, "eco_design_cert": False, "ai_score": 0},
         "chemical_waste": {"hazardous_reduction_pct": 0, "waste_recycling_pct": 0, "chemical_compliance": False, "ai_score": 0},
@@ -40,7 +40,7 @@ if "production_data" not in st.session_state:
         "sustainable_procurement": {"procurement_criteria_count": 0, "sustainable_budget_pct": 0, "procurement_tracking": False, "ai_score": 0},
         "life_cycle_thinking": {"lca_product_pct": 0, "consumer_comm": False, "lca_improvements": 0, "ai_score": 0},
         "waste_management": {"food_waste_reduction_pct": 0, "segregation_rate_pct": 0, "circular_partnerships": False, "ai_score": 0},
-        "tourism_infrastructure": {"sustainable_material_pct": 0, "eco_tourism_pct": 0, "energy_water_efficiency": False, "ai_score": 0},
+        "industry_specific": {"sector_metric_1": 0, "sector_metric_2": False, "sector_metric_3": 0, "ai_score": 0},  # Adaptable for any industry
         # Final Outputs
         "total_score": 0,
         "dimension_scores": {},
@@ -51,31 +51,34 @@ if "production_data" not in st.session_state:
 if "rerun_trigger" not in st.session_state:
     st.session_state["rerun_trigger"] = False
 
-# --- Constants (Scoring Framework + GSK Report Alignment) ---
+# --- Constants: Generalized SDG 12 Scoring Framework ---
+# Expanded to support 8+ industries; industry-specific dimension adapts dynamically
 DIMENSIONS = [
     {
         "id": "resource_efficiency",
         "name": "Resource Efficiency (SDG 12.2)",
         "weight": 0.25,
         "actions": [
-            {"name": "renewable_energy_pct", "desc": "Renewable energy percentage (e.g., GSK's 'imported renewable electricity')", "calc": lambda x: 10 if x >=50 else 5 if x >=30 else 0},
-            {"name": "energy_tech_count", "desc": "Number of energy-efficient tech categories (e.g., solar, heat recovery)", "calc": lambda x: min(10, x * 5)},
-            {"name": "water_reuse_pct", "desc": "Water reuse rate percentage (vs. baseline, e.g., GSK's 24% reduction)", "calc": lambda x: 10 if x >=70 else 5 if x >=40 else 0}
+            {"name": "renewable_energy_pct", "desc": "Renewable energy percentage (e.g., solar, wind)", "calc": lambda x: 10 if x >=50 else 5 if x >=30 else 0},
+            {"name": "energy_tech_count", "desc": "Number of energy-efficient technologies (e.g., LED, heat pumps)", "calc": lambda x: min(10, x * 5)},
+            {"name": "water_reuse_pct", "desc": "Water reuse/recycling rate (vs. total consumption)", "calc": lambda x: 10 if x >=70 else 5 if x >=40 else 0}
         ],
-        "ai_criteria": "Evaluate 1) energy intensity vs. pharma/industry peers, 2) water leak prevention. Return 0-5 (no text).",
-        "max_subtotal": 30
+        "ai_criteria": "Evaluate 1) energy intensity vs. industry peers, 2) water conservation practices. Return 0-5 (no text).",
+        "max_subtotal": 30,
+        "industries": ["All"]  # Appears for all sectors
     },
     {
         "id": "sustainable_production",
         "name": "Sustainable Production (SDG 12.3)",
         "weight": 0.20,
         "actions": [
-            {"name": "recycled_material_pct", "desc": "Recycled material percentage (e.g., GSK's paper packaging)", "calc": lambda x: 10 if x >=40 else 5 if x >=20 else 0},
+            {"name": "recycled_material_pct", "desc": "Recycled/upcycled material percentage in production", "calc": lambda x: 10 if x >=40 else 5 if x >=20 else 0},
             {"name": "waste_intensity_pct", "desc": "Waste intensity vs. industry average (%)", "calc": lambda x: 10 if x <=20 else 5 if x <=40 else 0},
-            {"name": "eco_design_cert", "desc": "Eco-design certification (e.g., GSK's low-carbon inhalers)", "calc": lambda x: 10 if x else 0}
+            {"name": "eco_design_cert", "desc": "Eco-design certification (e.g., Cradle to Cradle, EU Ecolabel)", "calc": lambda x: 10 if x else 0}
         ],
-        "ai_criteria": "Evaluate 1) material yield improvement, 2) product recyclability. Return 0-5 (no text).",
-        "max_subtotal": 30
+        "ai_criteria": "Evaluate 1) material yield efficiency, 2) product recyclability potential. Return 0-5 (no text).",
+        "max_subtotal": 30,
+        "industries": ["All"]
     },
     {
         "id": "chemical_waste",
@@ -83,47 +86,51 @@ DIMENSIONS = [
         "weight": 0.18,
         "actions": [
             {"name": "hazardous_reduction_pct", "desc": "Hazardous chemical reduction vs. baseline (%)", "calc": lambda x: 7 if x >=50 else 3 if x >=20 else 0},
-            {"name": "waste_recycling_pct", "desc": "Production waste recycling rate (e.g., GSK's 53% circular recovery)", "calc": lambda x: 7 if x >=80 else 3 if x >=50 else 0},
-            {"name": "chemical_compliance", "desc": "Compliance with REACH/AMR Alliance (e.g., GSK's API limits)", "calc": lambda x: 6 if x else 0}
+            {"name": "waste_recycling_pct", "desc": "Total production waste recycling rate (%)", "calc": lambda x: 7 if x >=80 else 3 if x >=50 else 0},
+            {"name": "chemical_compliance", "desc": "Compliance with global chemical standards (e.g., REACH, OSHA)", "calc": lambda x: 6 if x else 0}
         ],
-        "ai_criteria": "Evaluate 1) chemical spill protocols, 2) hazardous waste treatment. Return 0-3 (no text).",
-        "max_subtotal": 20
+        "ai_criteria": "Evaluate 1) chemical spill prevention protocols, 2) hazardous waste treatment. Return 0-3 (no text).",
+        "max_subtotal": 20,
+        "industries": ["Manufacturing", "Construction", "Chemicals", "Food & Beverage"]  # Relevant sectors only
     },
     {
         "id": "circular_economy",
         "name": "Circular Economy Integration (SDG 12.5)",
         "weight": 0.10,
         "actions": [
-            {"name": "takeback_program_pct", "desc": "Product lines with take-back programs (%)", "calc": lambda x: 4 if x >=50 else 2 if x >=20 else 0},
-            {"name": "packaging_sustainable_pct", "desc": "Sustainable packaging percentage (e.g., GSK's 86% deforestation-free paper)", "calc": lambda x: 3 if x >=80 else 1 if x >=50 else 0},
-            {"name": "certified_supplier_pct", "desc": "Sustainable suppliers (%) (e.g., GSK's 98% palm oil)", "calc": lambda x: 3 if x >=60 else 1 if x >=30 else 0}
+            {"name": "takeback_program_pct", "desc": "Product lines with take-back/recycling programs (%)", "calc": lambda x: 4 if x >=50 else 2 if x >=20 else 0},
+            {"name": "packaging_sustainable_pct", "desc": "Sustainable packaging percentage (recyclable/compostable)", "calc": lambda x: 3 if x >=80 else 1 if x >=50 else 0},
+            {"name": "certified_supplier_pct", "desc": "Suppliers with sustainability certifications (%)", "calc": lambda x: 3 if x >=60 else 1 if x >=30 else 0}
         ],
-        "ai_criteria": "Evaluate 1) tier 2 supplier practices, 2) product-as-a-service models. Return 0-2 (no text).",
-        "max_subtotal": 10
+        "ai_criteria": "Evaluate 1) tier 2 supplier sustainability practices, 2) product-as-a-service models. Return 0-2 (no text).",
+        "max_subtotal": 10,
+        "industries": ["All"]
     },
     {
         "id": "sustainable_procurement",
         "name": "Sustainable Procurement (SDG 12.7)",
         "weight": 0.08,
         "actions": [
-            {"name": "procurement_criteria_count", "desc": "Sustainability criteria in procurement (e.g., GSK's EcoVadis)", "calc": lambda x: 3 if x >=3 else 1 if x >=1 else 0},
-            {"name": "sustainable_budget_pct", "desc": "Procurement budget for sustainable goods (%)", "calc": lambda x: 3 if x >=30 else 1 if x >=10 else 0},
-            {"name": "procurement_tracking", "desc": "Tracking sustainable procurement performance", "calc": lambda x: 2 if x else 0}
+            {"name": "procurement_criteria_count", "desc": "Sustainability criteria in procurement policy (e.g., carbon, labor)", "calc": lambda x: 3 if x >=3 else 1 if x >=1 else 0},
+            {"name": "sustainable_budget_pct", "desc": "Procurement budget for sustainable goods/services (%)", "calc": lambda x: 3 if x >=30 else 1 if x >=10 else 0},
+            {"name": "procurement_tracking", "desc": "Tracking of sustainable procurement performance", "calc": lambda x: 2 if x else 0}
         ],
-        "ai_criteria": "Evaluate 1) supplier diversity, 2) ISO 20400 alignment. Return 0-2 (no text).",
-        "max_subtotal": 8
+        "ai_criteria": "Evaluate 1) supplier diversity, 2) alignment with ISO 20400. Return 0-2 (no text).",
+        "max_subtotal": 8,
+        "industries": ["All"]
     },
     {
         "id": "life_cycle_thinking",
         "name": "Life-Cycle Thinking (SDG 12.8)",
         "weight": 0.05,
         "actions": [
-            {"name": "lca_product_pct", "desc": "Products with Life-Cycle Assessment (%)", "calc": lambda x: 2 if x >=50 else 1 if x >=20 else 0},
-            {"name": "consumer_comm", "desc": "Sustainability info for consumers", "calc": lambda x: 2 if x else 0},
-            {"name": "lca_improvements", "desc": "Product improvements from LCA (e.g., GSK's inhaler redesign)", "calc": lambda x: 1 if x >=2 else 0.5 if x >=1 else 0}
+            {"name": "lca_product_pct", "desc": "Product lines with Life-Cycle Assessment (LCA) (%)", "calc": lambda x: 2 if x >=50 else 1 if x >=20 else 0},
+            {"name": "consumer_comm", "desc": "Sustainability information shared with consumers", "calc": lambda x: 2 if x else 0},
+            {"name": "lca_improvements", "desc": "Product improvements from LCA insights", "calc": lambda x: 1 if x >=2 else 0.5 if x >=1 else 0}
         ],
-        "ai_criteria": "Evaluate 1) scope 3 emissions in LCA, 2) eco-label engagement. Return 0-1 (no text).",
-        "max_subtotal": 5
+        "ai_criteria": "Evaluate 1) scope 3 emissions inclusion in LCA, 2) consumer engagement with eco-labels. Return 0-1 (no text).",
+        "max_subtotal": 5,
+        "industries": ["All"]
     },
     {
         "id": "waste_management",
@@ -131,38 +138,49 @@ DIMENSIONS = [
         "weight": 0.07,
         "actions": [
             {"name": "food_waste_reduction_pct", "desc": "Food/by-product waste reduction vs. baseline (%)", "calc": lambda x: 3 if x >=40 else 1 if x >=20 else 0},
-            {"name": "segregation_rate_pct", "desc": "Waste segregation rate (%)", "calc": lambda x: 3 if x >=90 else 1 if x >=60 else 0},
-            {"name": "circular_partnerships", "desc": "Partnerships for circularity (e.g., GSK's WOTR water project)", "calc": lambda x: 1 if x else 0}
+            {"name": "segregation_rate_pct", "desc": "Waste segregation rate at source (%)", "calc": lambda x: 3 if x >=90 else 1 if x >=60 else 0},
+            {"name": "circular_partnerships", "desc": "Partnerships for circular waste solutions (e.g., recycling firms)", "calc": lambda x: 1 if x else 0}
         ],
-        "ai_criteria": "Evaluate 1) recycled waste purity, 2) by-product revenue. Return 0-2 (no text).",
-        "max_subtotal": 7
+        "ai_criteria": "Evaluate 1) recycled waste purity, 2) revenue from by-product utilization. Return 0-2 (no text).",
+        "max_subtotal": 7,
+        "industries": ["Food & Beverage", "Retail", "Hospitality", "Manufacturing"]  # Relevant sectors
     },
     {
-        "id": "tourism_infrastructure",
-        "name": "Sustainable Tourism & Infrastructure (SDG 12.9)",
+        "id": "industry_specific",
+        "name": "Industry-Specific Sustainability (SDG 12)",
         "weight": 0.07,
         "actions": [
-            {"name": "sustainable_material_pct", "desc": "Sustainable building materials percentage", "calc": lambda x: 3 if x >=50 else 1 if x >=20 else 0},
-            {"name": "eco_tourism_pct", "desc": "Eco-tourism practices coverage (%)", "calc": lambda x: 3 if x >=60 else 1 if x >=30 else 0},
-            {"name": "energy_water_efficiency", "desc": "Energy/water use ≤30% of industry average", "calc": lambda x: 1 if x else 0}
+            {"name": "sector_metric_1", "desc": "Industry-specific metric 1 (e.g., 'Renewable fuel %' for Transport)", "calc": lambda x: 3 if x >=50 else 1 if x >=20 else 0},
+            {"name": "sector_metric_2", "desc": "Industry-specific metric 2 (e.g., 'Eco-tourism certification' for Tourism)", "calc": lambda x: 3 if x else 0},
+            {"name": "sector_metric_3", "desc": "Industry-specific metric 3 (e.g., 'Zero-waste store %' for Retail)", "calc": lambda x: 1 if x >=3 else 0.5 if x >=1 else 0}
         ],
-        "ai_criteria": "Evaluate 1) community impact, 2) infrastructure durability. Return 0-2 (no text).",
+        "ai_criteria": "Evaluate 1) industry-specific sustainability leadership, 2) alignment with sector SDG 12 targets. Return 0-2 (no text).",
         "max_subtotal": 7,
-        "industries": ["Tourism", "Hospitality", "Infrastructure"]
+        "industries": ["All"],  # Adapts via dynamic labeling
+        "sector_labels": {  # Dynamic metric names per industry
+            "Manufacturing": {"metric1": "Lean production adoption %", "metric2": "Zero-waste factory count", "metric3": "Remanufacturing volume %"},
+            "Retail": {"metric1": "Zero-waste store %", "metric2": "Reusable packaging program", "metric3": "Product repair service count"},
+            "Transport": {"metric1": "Renewable fuel %", "metric2": "Electric fleet %", "metric3": "Carbon-neutral route count"},
+            "Food & Beverage": {"metric1": "Organic ingredient %", "metric2": "Biodegradable packaging %", "metric3": "Food donation volume %"},
+            "Construction": {"metric1": "Sustainable material %", "metric2": "LEED-certified projects %", "metric3": "Construction waste reuse %"},
+            "Tourism": {"metric1": "Eco-tourism certification %", "metric2": "Water conservation program", "metric3": "Local sourcing %"},
+            "Healthcare": {"metric1": "Medical waste recycling %", "metric2": "Energy-efficient equipment %", "metric3": "Sustainable pharmacy program %"},
+            "Technology": {"metric1": "E-waste takeback %", "metric2": "Energy Star certification %", "metric3": "Circuit board recycling %"}
+        }
     }
 ]
 
-# --- Core AI Functions (Optimized for GSK Report) ---
-def get_ai_response(prompt, system_msg="You are an ESG expert specializing in pharmaceutical/industrial sustainability. Be concise."):
+# --- Core AI Functions (Generalized for All Industries) ---
+def get_ai_response(prompt, system_msg="You are a global ESG expert. Be concise and industry-agnostic."):
     if not OPENAI_AVAILABLE:
-        return "❌ AI requires OPENAI_API_KEY in Streamlit Secrets."
+        return "❌ AI features require an OPENAI_API_KEY in Streamlit Secrets."
     
     try:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "system", "content": system_msg}, {"role": "user", "content": prompt}],
-            temperature=0.3,  # Lower temp for precise data extraction
-            timeout=30  # Longer timeout for GSK's large text
+            temperature=0.4,  # Balanced for generalizability
+            timeout=30
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
@@ -170,86 +188,86 @@ def get_ai_response(prompt, system_msg="You are an ESG expert specializing in ph
         return None
 
 def extract_pdf_text(uploaded_file):
-    """Extract FULL text from GSK 2023 ESG Report + isolate key SDG 12 chapters"""
+    """Extract key ESG sections from ANY company's report (no industry bias)"""
     try:
         with fitz.open(stream=uploaded_file.read(), filetype="pdf") as pdf_doc:
             full_text = ""
             section_text = {
-                "environment": "",  # GSK's "Environment" chapter (pages 18-25)
-                "procurement": "",  # GSK's "Sustainable Procurement" (Ethical Standards)
-                "circular_economy": ""  # GSK's circular initiatives (Environment/Access)
+                "environment": "",    # Universal ESG chapter
+                "circular_economy": "",# Universal ESG chapter
+                "procurement": ""      # Universal ESG chapter
             }
             
-            # GSK report uses consistent headers—target SDG 12-relevant sections
+            # Identify key ESG chapters (case-insensitive, industry-agnostic)
             current_section = None
             for page_num, page in enumerate(pdf_doc):
                 page_text = page.get_text().strip()
                 full_text += f"\n--- Page {page_num + 1} ---\n" + page_text
                 
-                # Identify GSK's key chapters (case-insensitive for consistency)
-                if "environment" in page_text.lower() and "climate change" in page_text.lower():
+                # Trigger section detection for common ESG chapter titles
+                if any(term in page_text.lower() for term in ["environment", "climate", "resource use"]):
                     current_section = "environment"
-                elif "sustainable procurement" in page_text.lower() or "supplier" in page_text.lower() and "ecovadis" in page_text.lower():
-                    current_section = "procurement"
-                elif "circular economy" in page_text.lower() or "take-back" in page_text.lower() or "packaging" in page_text.lower():
+                elif any(term in page_text.lower() for term in ["circular economy", "take-back", "packaging"]):
                     current_section = "circular_economy"
-                elif "chapter" in page_text.lower() and any(chapter in page_text.lower() for chapter in ["access", "dei", "ethical standards"]):
-                    current_section = None  # Exit when non-SDG 12 chapters start
+                elif any(term in page_text.lower() for term in ["procurement", "supplier", "sustainable sourcing"]):
+                    current_section = "procurement"
+                elif any(term in page_text.lower() for term in ["governance", "dei", "social impact"]) and "chapter" in page_text.lower():
+                    current_section = None  # Exit non-SDG 12 chapters
                 
-                # Append text to current section (avoid duplicate headers)
+                # Append text to active section
                 if current_section and page_text:
                     section_text[current_section] += page_text + "\n"
             
-            # Store for later use (reduce AI processing time)
             st.session_state["production_data"]["extracted_sections"] = section_text
-            return full_text[:50000]  # Cap at 50k chars (covers GSK's key SDG 12 sections)
+            return full_text[:50000]  # Cap at 50k chars (covers key ESG sections)
     except Exception as e:
-        st.error(f"⚠️ GSK PDF extraction failed: {str(e)} (report may be password-protected)")
+        st.error(f"⚠️ PDF extraction failed: {str(e)} (report may be password-protected)")
         return ""
 
 def ai_extract_esg_data():
-    """Extract SDG 12 data from GSK's report with robust cleaning and defaults"""
+    """Extract SDG 12 data from ANY company's ESG report (industry-agnostic)"""
     data = st.session_state["production_data"]
     section_text = data["extracted_sections"]
+    company_industry = data["Industry"]
     
-    # Prioritize GSK's key sections (Environment, Procurement, Circular Economy)
+    # Prioritize universal ESG sections
     target_text = ""
     if section_text["environment"]:
         target_text += f"[Environment Section]\n{section_text['environment'][:15000]}\n"
-    if section_text["procurement"]:
-        target_text += f"[Procurement Section]\n{section_text['procurement'][:10000]}\n"
     if section_text["circular_economy"]:
         target_text += f"[Circular Economy Section]\n{section_text['circular_economy'][:10000]}\n"
+    if section_text["procurement"]:
+        target_text += f"[Procurement Section]\n{section_text['procurement'][:10000]}\n"
     
     if not target_text:
         target_text = data["extracted_pdf_text"][:30000]  # Fallback to full text
     
-    # GSK-specific terminology map (critical for accurate extraction)
-    gsk_terminology = """
-    GSK-Specific Terms to Map to SDG 12 Metrics:
-    - "Imported renewable electricity %": renewable_energy_pct
-    - "Water use reduction vs 2020 baseline": water_reuse_pct
-    - "Low-carbon Ventolin": eco_design_cert (true) + lca_improvements (count)
-    - "Waste recovered via circular routes": waste_recycling_pct
-    - "AMR Alliance wastewater compliance": chemical_compliance (true)
-    - "Deforestation-free paper packaging": packaging_sustainable_pct
-    - "Sustainably certified palm oil": certified_supplier_pct
-    - "EcoVadis supplier score": sustainable_procurement → procurement_criteria_count
-    - "LCA for products": lca_product_pct
+    # Universal terminology map (works for all industries)
+    general_terminology = """
+    ESG Terms to Map to SDG 12 Metrics (All Industries):
+    - "Renewable energy %", "Solar/wind adoption": renewable_energy_pct
+    - "Water reuse", "Water recycling rate": water_reuse_pct
+    - "Recycled material content", "Upcycled input": recycled_material_pct
+    - "Waste recycling rate", "Circular waste recovery": waste_recycling_pct
+    - "Supplier sustainability certification", "EcoVadis score": certified_supplier_pct
+    - "Life-cycle assessment", "LCA completed": lca_product_pct
+    - "Product take-back", "End-of-life program": takeback_program_pct
+    - "Sustainable packaging", "Compostable packaging": packaging_sustainable_pct
     """
 
-    prompt = f"""Extract SDG 12 production metrics from this GSK ESG Report text. 
+    prompt = f"""Extract SDG 12 production metrics from this company's ESG Report (Industry: {company_industry}).
     CRITICAL RULES:
     1. Return ONLY NUMBERS (no percentages, e.g., write 83 not "83%")
     2. Return 0 for missing data (NEVER use null)
     3. For booleans, return true/false ONLY
+    4. Adapt to the company's industry (e.g., "electric fleet %" for Transport, "organic ingredient %" for Food & Beverage)
     
-    {gsk_terminology}
+    {general_terminology}
     
     Return ONLY valid JSON (no extra text):
     {{
-        "company_name": "GSK PLC (fixed)",
-        "industry": "Pharmaceuticals (fixed)",
+        "company_name": "Company name (extract from report)",
+        "industry": "{company_industry} (keep as is)",
         "resource_efficiency": {{
             "renewable_energy_pct": "Number (0-100, no %)",
             "energy_tech_count": "Number (0+)",
@@ -281,71 +299,73 @@ def ai_extract_esg_data():
             "lca_improvements": "Number (0+)"
         }},
         "waste_management": {{
-            "food_waste_reduction_pct": "Number (0-100)",
+            "food_waste_reduction_pct": "Number (0-100, 0 if not applicable to industry)",
             "segregation_rate_pct": "Number (0-100)",
             "circular_partnerships": "true/false"
+        }},
+        "industry_specific": {{
+            "sector_metric_1": "Industry-specific number (e.g., 40 for '40% electric fleet' in Transport)",
+            "sector_metric_2": "Industry-specific boolean (e.g., true for 'reusable packaging' in Retail)",
+            "sector_metric_3": "Industry-specific number (e.g., 2 for '2 zero-waste stores' in Retail)"
         }}
     }}
     
-    GSK Report Text: {target_text}
+    ESG Report Text: {target_text}
     """
     
-    response = get_ai_response(prompt, system_msg="You extract ESG data from pharmaceutical reports. Return ONLY valid JSON—no explanations.")
+    response = get_ai_response(prompt, system_msg="You extract ESG data for ANY industry. Return ONLY valid JSON—no explanations.")
     if not response:
         return {}
     
     try:
-        extracted_data = json.loads(response)
+        # Clean AI response (remove code blocks if present)
+        cleaned_response = response.strip()
+        if cleaned_response.startswith("```json"):
+            cleaned_response = cleaned_response[7:-3].strip()
         
-        # --- GSK-Specific Data Cleaning ---
-        # 1. Remove percentage symbols and convert to float
+        extracted_data = json.loads(cleaned_response)
+        
+        # --- Universal Data Cleaning ---
         for dim in extracted_data:
             if isinstance(extracted_data[dim], dict):
                 for metric in extracted_data[dim]:
                     value = extracted_data[dim][metric]
-                    # Fix percentages with "%" (e.g., "83%" → 83)
+                    # Remove percentage symbols (e.g., "75%" → 75)
                     if isinstance(value, str) and "%" in value:
                         extracted_data[dim][metric] = float(value.replace("%", "").strip())
-                    # Fix invalid types (ensure numbers/booleans)
+                    # Convert string numbers to integers (e.g., "5" → 5)
                     if isinstance(value, str) and value.isdigit():
                         extracted_data[dim][metric] = int(value)
-                    # Replace any remaining nulls with defaults
+                    # Replace null with industry-appropriate defaults
                     if value is None:
-                        extracted_data[dim][metric] = 0 if "pct" in metric or "count" in metric else False
+                        if "pct" in metric or "count" in metric:
+                            extracted_data[dim][metric] = 0
+                        else:
+                            extracted_data[dim][metric] = False
         
-        # 2. Apply GSK-specific defaults for known unreported metrics
-        gsk_defaults = {
-            "resource_efficiency": {"energy_tech_count": 3},  # Solar, wind, heat recovery
-            "waste_management": {"food_waste_reduction_pct": 0},  # Irrelevant for pharma
-            "circular_economy": {"takeback_program_pct": 25}  # Estimate from GSK's donation programs
-        }
-        for dim, metrics in gsk_defaults.items():
-            for metric, value in metrics.items():
-                if extracted_data.get(dim, {}).get(metric, 0) in [0, False]:
-                    extracted_data[dim][metric] = value
-        
-        # 3. Force GSK identifiers
-        extracted_data["company_name"] = "GSK PLC"
-        extracted_data["industry"] = "Pharmaceuticals"
-        
+        # Ensure industry consistency
+        extracted_data["industry"] = company_industry
         return extracted_data
     
     except json.JSONDecodeError as e:
-        st.sidebar.error(f"⚠️ GSK Data Parse Error: {str(e)}. Raw response: {response[:200]}")
+        st.sidebar.error(f"⚠️ Data Parse Error: {str(e)}. Cleaned response: {cleaned_response[:200]}")
+        # Fallback: Return empty dict to trigger manual input
         return {}
+
 def ai_evaluate_unlisted_criteria(dimension):
-    """Evaluate AI-only criteria (uses GSK's section text for context)"""
+    """Evaluate AI-only criteria for ANY industry"""
     data = st.session_state["production_data"]
     dim_data = data[dimension["id"]]
+    company_industry = data["Industry"]
     section_text = data["extracted_sections"].get(dimension["id"], "")
     
-    prompt = f"""Evaluate {dimension['name']} for GSK:
+    prompt = f"""Evaluate {dimension['name']} for a {company_industry} company:
     - Company Data: {dim_data}
-    - GSK Report Context: {section_text[:2000]}  # Use relevant section
-    - Criteria: {dimension['ai_criteria']}
+    - ESG Report Context: {section_text[:2000]}
+    - Evaluation Criteria: {dimension['ai_criteria']}
     Return ONLY the numeric score (0-5, no text)."""
     
-    response = get_ai_response(prompt, system_msg="You analyze pharmaceutical ESG performance. Return ONLY a number.")
+    response = get_ai_response(prompt, system_msg="You analyze ESG performance for ANY industry. Return ONLY a number.")
     if not response:
         return 0
     try:
@@ -355,88 +375,114 @@ def ai_evaluate_unlisted_criteria(dimension):
         return 0
 
 def ai_generate_recommendations():
-    """Generate GSK-aligned recommendations (focus on pharma-specific actions)"""
+    """Generate industry-specific SDG 12 recommendations"""
     data = st.session_state["production_data"]
     scores = data["dimension_scores"]
     company_industry = data["Industry"]
     
-    # Identify low-performing dimensions (GSK's SDG 12 focus areas)
+    # Identify low-performing dimensions (universal logic)
     low_dimensions = []
     for dim in DIMENSIONS:
-        if dim["id"] == "tourism_infrastructure" and company_industry not in dim["industries"]:
+        # Skip dimensions irrelevant to the industry
+        if company_industry not in dim["industries"] and dim["industries"] != ["All"]:
             continue
+        
         dim_score = scores.get(dim["id"], {}).get("weighted_score", 0)
         max_threshold = (dim["max_subtotal"] * dim["weight"]) * 0.5
         if dim_score < max_threshold:
             low_dimensions.append(dim["name"])
     
     if not low_dimensions:
-        low_dimensions = ["Resource Efficiency (SDG 12.2)", "Circular Economy (SDG 12.5)"]
+        low_dimensions = ["Resource Efficiency (SDG 12.2)", "Circular Economy Integration (SDG 12.5)"]
     
-    prompt = f"""Generate 3 pharma-specific recommendations for {data['Company Name']} (Industry: {company_industry}).
-    Focus on low areas: {low_dimensions}.
+    prompt = f"""Generate 3 specific SDG 12 recommendations for a {company_industry} company.
+    Focus on low-performing areas: {low_dimensions}.
     Each recommendation must:
-    1. Link to SDG 12 (e.g., SDG 12.3 for product design).
-    2. Include measurable pharma actions (e.g., "Expand low-carbon inhaler production").
-    3. Explain impact (e.g., "Reduces Scope 3 emissions by 40%").
+    1. Link to a specific SDG 12 target (e.g., SDG 12.2 for resource efficiency).
+    2. Be industry-relevant (e.g., "Expand electric fleet" for Transport, "Add zero-waste stores" for Retail).
+    3. Include a measurable goal (e.g., "Reach 50% renewable energy by 2026").
+    4. Explain impact (e.g., "Cuts carbon emissions by 25%").
     Number recommendations (1., 2., 3.)—no bullets."""
     
-    response = get_ai_response(prompt, system_msg="You are a pharmaceutical sustainability consultant. Be specific.")
+    response = get_ai_response(prompt, system_msg="You create industry-specific sustainability recommendations. Be actionable.")
     if not response:
+        # Industry-agnostic fallback recommendations
         return [
-            "1. Expand renewable electricity to 100% by 2026 (SDG 12.2) – Reduces Scope 2 emissions by 50% (aligns with GSK's targets).",
-            "2. Increase sustainable packaging to 95% by 2027 (SDG 12.5) – Cuts plastic waste by 35% in pharmaceutical supply chains.",
-            "3. Require 100% of high-risk suppliers to have science-based targets by 2025 (SDG 12.7) – Lowers supply chain emissions by 25%."
+            "1. Increase renewable energy adoption to 50% by 2026 (SDG 12.2) – Reduces fossil fuel reliance and cuts operational emissions by 30%.",
+            "2. Expand product take-back programs to 50% of product lines (SDG 12.5) – Boosts circularity and reduces end-of-life waste by 25%.",
+            "3. Implement 3 sustainability criteria in procurement policies (SDG 12.7) – Improves supply chain sustainability and aligns with global standards."
         ]
     return [line.strip() for line in response.split("\n") if line.strip() and line.strip()[0].isdigit()]
 
 def ai_generate_mock_esg():
-    """Generate GSK-style ESG excerpt (pharma-specific, project-focused)"""
+    """Generate industry-specific ESG excerpt (mimics real reports)"""
     data = st.session_state["production_data"]
     scores = data["dimension_scores"]
+    company_name = data["Company Name"]
+    company_industry = data["Industry"]
     
-    # Use GSK's section text for realistic context
-    env_text = data["extracted_sections"].get("environment", "")[:500]
+    # Identify strengths/improvements (universal logic)
     high_dims = [dim["name"] for dim in DIMENSIONS if scores.get(dim["id"], {}).get("weighted_score", 0) > (dim["max_subtotal"] * dim["weight"]) * 0.7]
     low_dims = [dim["name"] for dim in DIMENSIONS if scores.get(dim["id"], {}).get("weighted_score", 0) < (dim["max_subtotal"] * dim["weight"]) * 0.5]
     
-    prompt = f"""Write a 300-500 word GSK-style ESG excerpt for {data['Company Name']} (Industry: {data['Industry']}).
+    # Industry-specific project examples
+    sector_projects = {
+        "Manufacturing": "lean production initiative and equipment upgrades",
+        "Retail": "zero-waste store rollout and reusable packaging program",
+        "Transport": "electric fleet expansion and renewable fuel adoption",
+        "Food & Beverage": "organic ingredient sourcing and food waste diversion program",
+        "Construction": "sustainable material procurement and LEED certification push",
+        "Tourism": "eco-tourism certification and local community sourcing",
+        "Healthcare": "medical waste recycling and energy-efficient clinic upgrades",
+        "Technology": "e-waste takeback and energy-efficient product design"
+    }
+    project = sector_projects.get(company_industry, "sustainability improvement project")
+    
+    prompt = f"""Write a 300-500 word ESG report excerpt for {company_name} (Industry: {company_industry}).
+    Focus on a specific sustainability project: {project}.
     Include:
-    1. A specific project (e.g., low-carbon product, water reuse).
-    2. GSK-like metrics: renewable energy ({data['resource_efficiency']['renewable_energy_pct']}%), waste recycling ({data['chemical_waste']['waste_recycling_pct']}%), sustainable packaging ({data['circular_economy']['packaging_sustainable_pct']}%).
+    1. Project timeline (e.g., "launched in 2023, expanded in 2024").
+    2. 3+ industry-relevant metrics (e.g., "40% electric fleet" for Transport, "75% recycled packaging" for Retail).
     3. Strengths: {high_dims if high_dims else ['Sustainable procurement']}.
     4. Improvements: {low_dims if low_dims else ['Resource efficiency']}.
-    5. Future goal tied to SDG 12 (e.g., "2030 net-zero production").
-    Use formal pharma ESG tone (avoid jargon). Do NOT introduce the company.
+    5. Future goal tied to SDG 12 (e.g., "2030 circular production target").
+    Use formal ESG report tone (no jargon). Do NOT reintroduce the company.
     
-    GSK Context Reference: {env_text}"""
+    Key Metrics to Reference:
+    - Renewable energy: {data['resource_efficiency']['renewable_energy_pct']}%
+    - Waste recycling: {data['chemical_waste']['waste_recycling_pct']}%
+    - Sustainable packaging: {data['circular_economy']['packaging_sustainable_pct']}%
+    - Industry metric: {data['industry_specific']['sector_metric_1']}%
+    """
     
-    fallback = f"""In 2024, {data['Company Name']} advanced its low-carbon production initiative, building on progress in sustainable manufacturing. The project, aligned with SDG 12.3 (sustainable production patterns), focused on optimizing solvent recovery and scaling recycled packaging for pharmaceutical products. 
+    fallback = f"""In 2024, {company_name} advanced its {project}, building on progress toward SDG 12 (Responsible Consumption and Production). The initiative focused on reducing operational environmental impact while aligning with {company_industry}-specific sustainability priorities.
 
-    During the year, the initiative reduced production waste intensity by {data['sustainable_production']['waste_intensity_pct']}% vs. the industry average, while 86% of paper packaging was sourced from deforestation-free suppliers—exceeding the 2024 target of 80%. Renewable electricity accounted for {data['resource_efficiency']['renewable_energy_pct']}% of total consumption, supported by on-site solar installations at three manufacturing sites. 
+During the year, the project delivered measurable results: renewable energy accounted for {data['resource_efficiency']['renewable_energy_pct']}% of total consumption, waste recycling reached {data['chemical_waste']['waste_recycling_pct']}%, and {data['circular_economy']['packaging_sustainable_pct']}% of packaging was sustainable (recyclable or compostable). Industry-specific milestones included {data['industry_specific']['sector_metric_1']}% adoption of a key sustainability practice, supported by partnerships with local recycling firms and sustainable suppliers.
 
-    Key strengths included chemical waste management (100% compliance with AMR Alliance discharge limits) and sustainable procurement (89% of high-risk suppliers met EcoVadis thresholds). Areas for improvement included water reuse (currently {data['resource_efficiency']['water_reuse_pct']}%, below the 40% target) and product take-back programs (covering just 20% of product lines). 
+Strengths included {high_dims[0]} (exceeding 2024 targets) and sustainable procurement (89% of high-risk suppliers met minimum sustainability criteria). Areas for improvement included {low_dims[0]} (currently below industry benchmarks) and water reuse (at {data['resource_efficiency']['water_reuse_pct']}%, below the 40% target).
 
-    Looking ahead, the company aims to achieve 90% recycled packaging by 2026 (SDG 12.5) and expand water reuse systems to all high-stress sites—aligning with its broader 2030 commitment to circular production."""
+Looking ahead, {company_name} aims to scale the project by 2026, targeting 50% renewable energy (SDG 12.2), 90% sustainable packaging (SDG 12.5), and {data['industry_specific']['sector_metric_1'] + 10}% adoption of the industry-specific practice—aligning with its long-term vision of fully circular operations by 2030."""
     
-    return get_ai_response(prompt, system_msg="You write pharmaceutical ESG excerpts. Mimic GSK's formal, data-heavy style.") or fallback
+    return get_ai_response(prompt, system_msg="You write ESG excerpts for ANY industry. Use a formal, data-heavy tone.") or fallback
 
-# --- Helper Functions (GSK Compatibility) ---
+# --- Helper Functions (Generalized) ---
 def calculate_dimension_scores():
-    """Calculate scores (uses GSK's section text for AI evaluation)"""
+    """Calculate SDG 12 scores for ANY industry"""
     data = st.session_state["production_data"]
     dimension_scores = {}
     total_score = 0
+    company_industry = data["Industry"]
     
     for dim in DIMENSIONS:
-        if dim["id"] == "tourism_infrastructure" and data["Industry"] not in dim["industries"]:
+        # Skip dimensions irrelevant to the company's industry
+        if company_industry not in dim["industries"] and dim["industries"] != ["All"]:
             continue
         
         # Calculate action-based subtotal
         dim_data = data[dim["id"]]
         action_subtotal = sum([action["calc"](dim_data[action["name"]]) for action in dim["actions"]])
         
-        # Add AI score (uses GSK's section text for context)
+        # Add AI score (industry-adapted)
         ai_score = ai_evaluate_unlisted_criteria(dim) if OPENAI_AVAILABLE else 0
         dim_data["ai_score"] = ai_score
         total_subtotal = min(dim["max_subtotal"], action_subtotal + ai_score)
@@ -456,24 +502,25 @@ def calculate_dimension_scores():
     st.session_state["production_data"] = data
 
 def generate_report_content():
-    """Generate GSK-style report content"""
+    """Generate general-purpose SDG 12 report"""
     data = st.session_state["production_data"]
     scores = data["dimension_scores"]
+    company_industry = data["Industry"]
     
     content = f"SDG 12 Production Responsibility Report\n"
     content += f"Company: {data['Company Name']}\n"
-    content += f"Industry: {data['Industry']}\n"
+    content += f"Industry: {company_industry}\n"
     content += f"Total Score: {data['total_score']}/100\n"
     content += "="*50 + "\n\n"
     
-    # Dimension Breakdown (GSK-like structure)
-    content += "1. SDG 12 Dimension Breakdown\n"
+    # Dimension Breakdown (Universal Format)
+    content += "1. SDG 12 Dimension Score Breakdown\n"
     for dim_id, dim_data in scores.items():
         content += f"- {dim_data['name']}: {dim_data['weighted_score']}/{dim_data['max_weighted']}\n"
     
-    # Key Metrics (Pharma Focus)
-    content += "\n2. Key Pharmaceutical Production Metrics\n"
-    core_dims = ["resource_efficiency", "sustainable_production", "chemical_waste"]
+    # Key Metrics (Industry-Agnostic)
+    content += "\n2. Key Production Sustainability Metrics\n"
+    core_dims = ["resource_efficiency", "sustainable_production", "circular_economy"]
     for dim_id in core_dims:
         if dim_id not in data:
             continue
@@ -483,68 +530,91 @@ def generate_report_content():
         for action in [a for a in DIMENSIONS[[d["id"] for d in DIMENSIONS].index(dim_id)]["actions"]]:
             content += f"  - {action['desc']}: {dim_data[action['name']]}\n"
     
-    # Recommendations + Mock Excerpt
-    content += "\n3. Improvement Recommendations\n"
+    # Industry-Specific Metrics
+    content += f"\n3. {company_industry}-Specific Metrics\n"
+    sector_dim = next(d for d in DIMENSIONS if d["id"] == "industry_specific")
+    sector_labels = sector_dim["sector_labels"].get(company_industry, {"metric1": "Metric 1", "metric2": "Metric 2", "metric3": "Metric 3"})
+    content += f"- {sector_labels['metric1']}: {data['industry_specific']['sector_metric_1']}\n"
+    content += f"- {sector_labels['metric2']}: {'Yes' if data['industry_specific']['sector_metric_2'] else 'No'}\n"
+    content += f"- {sector_labels['metric3']}: {data['industry_specific']['sector_metric_3']}\n"
+    
+    # Recommendations + Excerpt
+    content += "\n4. Improvement Recommendations\n"
     recommendations = ai_generate_recommendations() if OPENAI_AVAILABLE else data["ai_recommendations"]
     for i, rec in enumerate(recommendations, 1):
         content += f"{i}. {rec}\n"
     
-    content += "\n4. Mock ESG Excerpt (GSK Style)\n"
+    content += "\n5. Mock ESG Report Excerpt\n"
     mock_excerpt = ai_generate_mock_esg() if OPENAI_AVAILABLE else data["mock_esg_excerpt"]
     content += mock_excerpt + "\n"
     
     return content, recommendations, mock_excerpt
 
-# --- ESG Report Writing Guidelines (GSK Example) ---
+# --- ESG Report Writing Guidelines (Generalized) ---
 def display_writing_recommendations():
-    st.subheader("✏️ ESG Report Writing Guidelines (GSK Example Reference)")
+    st.subheader("✏️ General ESG Report Writing Guidelines (SDG 12 Focus)")
     st.markdown("""
-    Use GSK’s 2023 ESG Report as a template for SDG 12 sections:
+    Use these best practices to draft credible SDG 12 sections for ANY industry:
     
-    ### 1. Focus on Pharma-Specific Projects
-    - **GSK Example**: "Low-carbon Ventolin inhaler (90% emissions reduction) – Phase III trials in 2024"  
-    - **Your Report**: Highlight product redesigns, API waste reduction, or sustainable packaging for pharmaceuticals.
+    ### 1. Focus on Specific, Industry-Relevant Projects
+    - **Bad**: "We improved sustainability."  
+    - **Good (Manufacturing)**: "In 2024, we upgraded 3 factories to lean production, cutting waste by 35% and saving 2M gallons of water."  
+    - **Good (Retail)**: "We launched 5 zero-waste stores, diverting 90% of waste from landfills via in-store recycling programs."
 
-    ### 2. Link Metrics to Baselines/Targes
-    - **GSK Example**: "Water use reduced by 24% vs. 2020 baseline (11% in high-stress regions)"  
-    - **Your Report**: Include year-over-year changes (e.g., "Waste recycling up from 45% in 2022 to 53% in 2023").
+    ### 2. Tie Metrics to Baselines & Targets
+    Always include context:  
+    - Baselines: "Renewable energy up from 25% in 2022 to 40% in 2024"  
+    - Industry benchmarks: "Exceeds the retail sector average of 30% for sustainable packaging"  
+    - Future goals: "Targeting 60% electric fleet by 2026 (SDG 12.2)"
 
-    ### 3. Reference Industry Standards
-    - **GSK Example**: "89% of suppliers meet EcoVadis minimum score; 100% compliant with AMR Alliance limits"  
-    - **Your Report**: Cite REACH, ISO 20400, or pharma-specific standards (e.g., "Compliant with FDA’s sustainable manufacturing guidelines").
+    ### 3. Explicitly Link to SDG 12 Targets
+    Specify which SDG 12 target your action supports:  
+    - SDG 12.2: Sustainable resource use (energy/water efficiency)  
+    - SDG 12.3: Halve food waste (or production waste for non-food industries)  
+    - SDG 12.5: Reduce waste generation (recycling, circular design)  
+    - SDG 12.7: Sustainable procurement (supplier standards)
 
     ### 4. Be Transparent About Gaps
-    - **GSK Example**: "Supplier compliance down from 94% to 87% (expanded supplier scope)"  
-    - **Your Report**: Explain setbacks (e.g., "Water reuse below target due to delayed treatment plant installation").
+    Build credibility by addressing setbacks:  
+    - "Water reuse fell short of 40% target (reached 28%) due to delayed treatment plant installation—we’ll complete upgrades by Q2 2025."
+
+    ### 5. Avoid Industry-Agnostic Jargon
+    Use sector-specific language:  
+    - Instead of "sustainable transport," use "electric delivery vans" (logistics)  
+    - Instead of "circular economy," use "product take-back programs" (electronics)
+
+    ### 6. Highlight Stakeholder Collaboration
+    Show collective impact:  
+    - "Partnered with 10 local farms to source 80% organic ingredients (Food & Beverage)"  
+    - "Worked with 5 recycling firms to launch e-waste take-back in 200 stores (Retail)"
     """)
 
-# --- Sidebar UI (Optimized for GSK PDF) ---
-st.sidebar.header("📊 Data Input (GSK ESG Report Compatible)")
+# --- Sidebar UI (General-Purpose Design) ---
+st.sidebar.header("📊 SDG 12 Data Input (All Industries)")
 
-# 1. GSK PDF Upload
-st.sidebar.subheader("1. Upload GSK 2023 ESG Report (esg-performance-report-2023.pdf)")
-uploaded_pdf = st.sidebar.file_uploader("Upload PDF", type="pdf", help="Upload GSK's 2023 ESG Report (120+ pages)")
+# 1. PDF Upload (Any Company's ESG Report)
+st.sidebar.subheader("1. Upload ESG Report (Optional)")
+uploaded_pdf = st.sidebar.file_uploader("Upload PDF (supports any company's ESG report)", type="pdf", help="Upload 2022-2024 ESG report for AI data extraction")
 if uploaded_pdf:
-    with st.spinner("🔍 Extracting GSK's SDG 12 sections (Environment, Procurement)..."):
+    with st.spinner("🔍 Extracting ESG sections (Environment, Circular Economy)..."):
         pdf_text = extract_pdf_text(uploaded_pdf)
         data = st.session_state["production_data"]
         data["extracted_pdf_text"] = pdf_text
         st.session_state["production_data"] = data
         
-        # Show GSK's extracted sections (for verification)
-        with st.sidebar.expander("View Extracted GSK Sections", expanded=False):
+        # Show extracted sections for verification
+        with st.sidebar.expander("View Extracted ESG Sections", expanded=False):
             section_text = data["extracted_sections"]
             if section_text["environment"]:
                 st.text_area("Environment Section (First 2000 Chars)", section_text["environment"][:2000], height=150, disabled=True)
-            if section_text["procurement"]:
-                st.text_area("Procurement Section (First 2000 Chars)", section_text["procurement"][:2000], height=150, disabled=True)
+            if section_text["circular_economy"]:
+                st.text_area("Circular Economy Section (First 2000 Chars)", section_text["circular_economy"][:2000], height=150, disabled=True)
         
-        # Extract GSK data (if AI is available)
+        # Extract data (if AI is available)
         if OPENAI_AVAILABLE:
-            with st.spinner("🤖 Extracting SDG 12 data from GSK's report..."):
+            with st.spinner(f"🤖 Extracting SDG 12 data for {data['Industry']} industry..."):
                 esg_data = ai_extract_esg_data()
                 if esg_data:
-                    # Update only non-null fields (preserve manual inputs)
                     updated = False
                     for key, value in esg_data.items():
                         if key in data and value is not None:
@@ -557,80 +627,93 @@ if uploaded_pdf:
                                 data[key] = value
                                 updated = True
                     if updated:
-                        st.sidebar.success("✅ Populated GSK's SDG 12 data! Review below.")
+                        st.sidebar.success("✅ Populated ESG data! Review and edit below.")
                         st.session_state["production_data"] = data
 
-# 2. Company Info (Neutral—No GSK Default)
+# 2. Company Information (Expanded Industry List)
 st.sidebar.subheader("2. Company Information")
 company_name = st.sidebar.text_input(
     "Company Name",
     st.session_state["production_data"]["Company Name"],
     key="company_name"
 )
+# Expanded to 8+ mainstream industries
+industries = ["Manufacturing", "Retail", "Transport", "Food & Beverage", "Construction", "Tourism", "Healthcare", "Technology", "Other"]
 industry = st.sidebar.selectbox(
     "Industry",
-    ["Pharmaceuticals", "Manufacturing", "Tourism", "Hospitality", "Infrastructure", "Other"],
-    index=["Pharmaceuticals", "Manufacturing", "Tourism", "Hospitality", "Infrastructure", "Other"].index(
-        st.session_state["production_data"]["Industry"]
-    ),
+    industries,
+    index=industries.index(st.session_state["production_data"]["Industry"]),
     key="industry"
 )
 
-# 3. Dimension Inputs (Pharma-Aligned Labels + GSK Data None Handling)
-st.sidebar.subheader("3. SDG 12 Production Data")
+# 3. Dimension Inputs (Industry-Adapted Labels)
+st.sidebar.subheader("3. SDG 12 Production Sustainability Data")
 data = st.session_state["production_data"]
+sector_dim = next(d for d in DIMENSIONS if d["id"] == "industry_specific")
+sector_labels = sector_dim["sector_labels"].get(industry, {"metric1": "Industry Metric 1 (%)", "metric2": "Industry Metric 2", "metric3": "Industry Metric 3 (Count)"})
 
 for dim in DIMENSIONS:
-    # Skip tourism dimension for non-relevant industries (GSK = Pharmaceuticals)
-    if dim["id"] == "tourism_infrastructure" and industry not in dim["industries"]:
+    # Skip dimensions irrelevant to the selected industry
+    if industry not in dim["industries"] and dim["industries"] != ["All"]:
         continue
     
     st.sidebar.markdown(f"**{dim['name']}**")
     dim_data = data[dim["id"]]
     
+    # Dynamic label for industry-specific dimension
     for action in dim["actions"]:
-        # Get current value—default to 0 if None (critical for GSK report gaps)
+        # Get default value (0 if None)
         current_value = dim_data[action["name"]]
         initial_value = current_value if current_value is not None else 0
         
-        if "pct" in action["name"]:  # Percentage sliders (GSK uses % for most metrics)
+        # Industry-specific label adaptation
+        if dim["id"] == "industry_specific":
+            if action["name"] == "sector_metric_1":
+                action_desc = sector_labels["metric1"]
+            elif action["name"] == "sector_metric_2":
+                action_desc = sector_labels["metric2"]
+            else:
+                action_desc = sector_labels["metric3"]
+        else:
+            action_desc = action["desc"]
+        
+        # Render input based on metric type
+        if "pct" in action["name"] or action["name"] == "sector_metric_1":
             value = st.sidebar.slider(
-                f"{action['desc']} (%)",
+                f"{action_desc} (%)",
                 min_value=0,
                 max_value=100,
-                value=initial_value,  # No more None—safe for slider
+                value=int(initial_value),
                 key=f"{dim['id']}_{action['name']}",
-                help=f"GSK reference: See {dim['name']} in Environment chapter (pages 18-25)"
+                help=f"Example: 40 = 40% (relevant for {industry} industry)"
             )
-        elif "count" in action["name"] or "improvements" in action["name"]:  # Numeric counts
+        elif "count" in action["name"] or action["name"] == "sector_metric_3":
             value = st.sidebar.number_input(
-                f"{action['desc']}",
+                f"{action_desc} (Count)",
                 min_value=0,
-                value=int(initial_value),  # Ensure integer for counts (e.g., GSK's energy tech count)
+                value=int(initial_value),
                 key=f"{dim['id']}_{action['name']}",
-                help=f"GSK reference: Count of initiatives (e.g., solar/wind projects)"
+                help=f"Example: 5 = 5 locations (relevant for {industry} industry)"
             )
-        else:  # Boolean checkboxes (GSK uses "compliance" or "certification" for these)
+        else:
             value = st.sidebar.checkbox(
-                f"{action['desc']}",
-                value=initial_value if isinstance(initial_value, bool) else False,  # Fix boolean None
+                f"{action_desc}",
+                value=initial_value if isinstance(initial_value, bool) else False,
                 key=f"{dim['id']}_{action['name']}",
-                help=f"GSK reference: Check if GSK mentions compliance/certification"
+                help=f"Check if your company has this practice (relevant for {industry} industry)"
             )
         
-        # Update session state with valid value (no None)
         dim_data[action["name"]] = value
     
-    # Save updated dimension data back to session state
     data[dim["id"]] = dim_data
     st.sidebar.markdown("---")
 
-# 4. Save Data
-if st.sidebar.button("💾 Save Data & Calculate Scores", use_container_width=True):
+# 4. Save Data (Universal Logic)
+if st.sidebar.button("💾 Save Data & Calculate SDG 12 Score", use_container_width=True):
     data["Company Name"] = company_name
     data["Industry"] = industry
     calculate_dimension_scores()
-    st.sidebar.success("✅ Data saved! Check main dashboard for results.")
+    st.sidebar.success(f"✅ Data saved! {company_name}'s SDG 12 score: {data['total_score']}/100")
     st.session_state["rerun_trigger"] = True
 
 # --- Rerun Trigger ---
@@ -638,15 +721,15 @@ if st.session_state["rerun_trigger"]:
     st.session_state["rerun_trigger"] = False
     st.rerun()
 
-# --- Main Dashboard (GSK-Style Results) ---
+# --- Main Dashboard (General-Purpose Layout) ---
 data = st.session_state["production_data"]
 scores = data.get("dimension_scores", {})
 total_score = data.get("total_score", 0)
 
-st.title("🌱 SDG 12 Production Responsibility Evaluator (GSK Report Compatible)")
+st.title("🌱 SDG 12 Production Responsibility Evaluator (All Industries)")
 
-# 1. Overview
-st.subheader("📋 Evaluation Overview")
+# 1. Overview Card (Neutral Design)
+st.subheader("📋 SDG 12 Evaluation Overview")
 col1, col2, col3 = st.columns(3)
 with col1:
     st.metric("Company Name", data["Company Name"])
@@ -655,8 +738,8 @@ with col2:
 with col3:
     st.metric("Total SDG 12 Score", f"{total_score}/100")
 
-# 2. Score Breakdown Chart (GSK Colors)
-st.subheader("📊 Dimension Score Breakdown")
+# 2. Score Breakdown Chart (Universal Colors)
+st.subheader("📊 SDG 12 Dimension Score Breakdown")
 if scores:
     dim_names = [v["name"].split(" (")[0] for v in scores.values()]
     dim_scores = [v["weighted_score"] for v in scores.values()]
@@ -666,13 +749,13 @@ if scores:
     x = np.arange(len(dim_names))
     width = 0.35
     
-    # GSK's brand colors (teal for achieved, light gray for max)
-    bars1 = ax.bar(x - width/2, dim_scores, width, label="Achieved Score", color="#00857C")
-    bars2 = ax.bar(x + width/2, dim_max, width, label="Max Possible Score", color="#E0E0E0")
+    # Neutral color scheme (works for all industries)
+    bars1 = ax.bar(x - width/2, dim_scores, width, label="Achieved Score", color="#2E8B57")
+    bars2 = ax.bar(x + width/2, dim_max, width, label="Max Possible Score", color="#D3D3D3", alpha=0.7)
     
-    ax.set_xlabel("SDG 12 Dimensions")
+    ax.set_xlabel("SDG 12 Sustainability Dimensions")
     ax.set_ylabel("Score")
-    ax.set_title("SDG 12 Dimension Comparison (GSK-Aligned)")
+    ax.set_title(f"SDG 12 Dimension Comparison ({data['Industry']} Industry)")
     ax.set_xticks(x)
     ax.set_xticklabels(dim_names, rotation=45, ha="right")
     ax.legend()
@@ -688,9 +771,9 @@ if scores:
     plt.tight_layout()
     st.pyplot(fig)
 else:
-    st.info("ℹ️ Upload GSK's ESG report and save data to generate scores.")
+    st.info("ℹ️ Upload an ESG report or enter data in the sidebar to generate scores.")
 
-# 3. Detailed Score Table
+# 3. Detailed Score Table (Universal Format)
 st.subheader("📋 Detailed Score Table")
 if scores:
     table_data = []
@@ -702,11 +785,11 @@ if scores:
         })
     st.dataframe(pd.DataFrame(table_data), use_container_width=True)
 
-# 4. AI Recommendations (Pharma-Specific)
-st.subheader("💡 Pharma-Specific Recommendations")
+# 4. Industry-Specific Recommendations
+st.subheader("💡 SDG 12 Improvement Recommendations")
 if OPENAI_AVAILABLE and scores:
-    if st.button("Generate GSK-Style Recommendations", use_container_width=True):
-        with st.spinner("🤖 Generating recommendations..."):
+    if st.button(f"Generate {data['Industry']}-Specific Recommendations", use_container_width=True):
+        with st.spinner("🤖 Creating tailored recommendations..."):
             recommendations = ai_generate_recommendations()
             data["ai_recommendations"] = recommendations
             st.session_state["production_data"] = data
@@ -715,12 +798,12 @@ if OPENAI_AVAILABLE and scores:
         for i, rec in enumerate(data["ai_recommendations"], 1):
             st.write(f"{i}. {rec}")
 else:
-    st.info("ℹ️ Upload GSK's report and enable AI to generate recommendations.")
+    st.info("ℹ️ Save data and enable AI to generate industry-specific recommendations.")
 
-# 5. Mock ESG Excerpt (GSK Style)
-st.subheader("📄 Mock ESG Excerpt (GSK Template)")
+# 5. Mock ESG Excerpt (Industry-Adapted)
+st.subheader("📄 Mock ESG Report Excerpt")
 if OPENAI_AVAILABLE:
-    if st.button("Generate GSK-Style Excerpt", use_container_width=True):
+    if st.button(f"Generate {data['Industry']}-Style ESG Excerpt", use_container_width=True):
         with st.spinner("🤖 Writing ESG excerpt..."):
             mock_excerpt = ai_generate_mock_esg()
             data["mock_esg_excerpt"] = mock_excerpt
@@ -729,13 +812,13 @@ if OPENAI_AVAILABLE:
     if data["mock_esg_excerpt"]:
         st.write(data["mock_esg_excerpt"])
 else:
-    st.info("ℹ️ Enable AI to generate a GSK-style ESG excerpt.")
+    st.info("ℹ️ Enable AI to generate an industry-specific ESG excerpt.")
 
-# 6. Writing Guidelines (GSK Reference)
+# 6. General Writing Guidelines
 display_writing_recommendations()
 
-# 7. Report Export (GSK Format)
-st.subheader("📥 Export GSK-Style Report")
+# 7. Report Export (Universal Format)
+st.subheader("📥 Export SDG 12 Report")
 if scores:
     report_content, _, _ = generate_report_content()
     
@@ -748,7 +831,7 @@ if scores:
         use_container_width=True
     )
     
-    # PDF Export (GSK-Style Formatting)
+    # PDF Export (General-Purpose Styling)
     if st.button("Generate PDF Report", use_container_width=True):
         if not OPENAI_AVAILABLE:
             st.warning("⚠️ AI is required for PDF report generation.")
@@ -763,10 +846,10 @@ if scores:
                     <title>{data['Company Name']} SDG 12 Report</title>
                     <style>
                         body {{ font-family: Arial; margin: 30px; }}
-                        h1 {{ color: #00857C; }}
-                        .header {{ border-bottom: 2px solid #00857C; padding-bottom: 10px; margin-bottom: 20px; }}
+                        h1 {{ color: #2E8B57; }}
+                        .header {{ border-bottom: 2px solid #2E8B57; padding-bottom: 10px; margin-bottom: 20px; }}
                         table {{ border-collapse: collapse; width: 100%; margin: 20px 0; }}
-                        th {{ background-color: #00857C; color: white; padding: 8px; }}
+                        th {{ background-color: #2E8B57; color: white; padding: 8px; }}
                         td {{ border: 1px solid #ddd; padding: 8px; }}
                         .section {{ margin: 30px 0; }}
                     </style>
@@ -810,4 +893,4 @@ if scores:
         except Exception as e:
             st.error(f"⚠️ PDF generation failed: {str(e)} (install wkhtmltopdf: https://wkhtmltopdf.org/)")
 else:
-    st.info("ℹ️ Save data to export reports.")
+    st.info("ℹ️ Save data to generate and export reports.")
