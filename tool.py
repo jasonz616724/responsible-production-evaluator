@@ -51,7 +51,6 @@ if "rerun_trigger" not in st.session_state:
     st.session_state["rerun_trigger"] = False
 
 # --- Constants (Scoring Framework) ---
-# Dimension Definitions (aligned with SDG 12, adjusted for feasibility)
 DIMENSIONS = [
     {
         "id": "resource_efficiency",
@@ -155,7 +154,7 @@ DIMENSIONS = [
 # --- Core AI Functions ---
 def get_ai_response(prompt, system_msg="You are an ESG expert. Be concise."):
     if not OPENAI_AVAILABLE:
-        return "❌ AI requires OPENAI_API_KEY in secrets."
+        return "❌ AI features require an OPENAI_API_KEY in Streamlit Secrets."
     
     try:
         response = client.chat.completions.create(
@@ -170,66 +169,102 @@ def get_ai_response(prompt, system_msg="You are an ESG expert. Be concise."):
         return None
 
 def ai_extract_esg_data(pdf_text):
-    """Extract production-related data from ESG report text."""
+    """Extract production-related data from ESG report text with improved terminology handling."""
     if not pdf_text:
         return {}
     
-    prompt = f"""Extract the following data from this ESG report excerpt (return ONLY valid JSON, no extra text):
+    # Explicit terminology map to help AI recognize synonyms for key metrics
+    terminology_map = """
+    Key Metrics & Synonyms to Recognize:
+    - Renewable energy percentage: "solar/wind energy占比", "可再生能源使用比例", "green energy share", "清洁能源占比"
+    - Energy-efficient tech categories: "节能技术数量", "energy-saving technologies", "高效能设备种类", "节能设备数量"
+    - Water reuse rate: "水资源循环利用率", "water recycling percentage", "中水回用率", "水循环利用比例"
+    - Recycled material percentage: "再生材料占比", "recycled content", "回收原料使用率", "循环材料比例"
+    - Waste intensity vs industry average: "单位产值废弃物强度", "waste per unit output vs peers", "废物强度行业对比", "单位产品废弃物排放量"
+    - Eco-design certification: "生态设计认证", "environmental design certification", "绿色产品认证", "环保设计认证"
+    - Hazardous chemical reduction: "危险化学品削减率", "hazardous substances reduction", "有害化学物质减排", "危险废物减少比例"
+    - Waste recycling rate: "废弃物回收率", "production waste recycled", "废料再利用率", "垃圾回收比例"
+    - Chemical compliance: "化学品合规性", "REACH/Stockholm Convention compliance", "化学品管理达标", "符合化学品公约要求"
+    """
+    
+    prompt = f"""Extract the following data from this ESG report excerpt (return ONLY valid JSON, no extra text).
+    Use the terminology map below to recognize synonyms for metrics:
+    {terminology_map}
+    
     {{
         "company_name": "Company name (string)",
         "industry": "Industry (Manufacturing/Tourism/Hospitality/Infrastructure/Other)",
         "resource_efficiency": {{
-            "renewable_energy_pct": "Renewable energy percentage (number, 0-100)",
-            "energy_tech_count": "Number of energy-efficient tech categories (number, 0+)",
-            "water_reuse_pct": "Water reuse rate (number, 0-100)"
+            "renewable_energy_pct": "Renewable energy percentage (number, 0-100; return null if not found)",
+            "energy_tech_count": "Number of energy-efficient tech categories (number, 0+; return null if not found)",
+            "water_reuse_pct": "Water reuse rate (number, 0-100; return null if not found)"
         }},
         "sustainable_production": {{
-            "recycled_material_pct": "Recycled raw material percentage (number, 0-100)",
-            "waste_intensity_pct": "Waste intensity vs industry average (number, 0+)",
-            "eco_design_cert": "Eco-design certification (true/false)"
+            "recycled_material_pct": "Recycled raw material percentage (number, 0-100; return null if not found)",
+            "waste_intensity_pct": "Waste intensity vs industry average (number, 0+; return null if not found)",
+            "eco_design_cert": "Eco-design certification (true/false/null if not found)"
         }},
         "chemical_waste": {{
-            "hazardous_reduction_pct": "Hazardous chemical reduction vs baseline (number, 0-100)",
-            "waste_recycling_pct": "Production waste recycling rate (number, 0-100)",
-            "chemical_compliance": "Compliance with REACH/Stockholm Convention (true/false)"
+            "hazardous_reduction_pct": "Hazardous chemical reduction vs baseline (number, 0-100; return null if not found)",
+            "waste_recycling_pct": "Production waste recycling rate (number, 0-100; return null if not found)",
+            "chemical_compliance": "Compliance with REACH/Stockholm Convention (true/false/null if not found)"
         }},
         "circular_economy": {{
-            "takeback_program_pct": "Product lines with take-back programs (number, 0-100)",
-            "packaging_sustainable_pct": "Sustainable packaging percentage (number, 0-100)",
-            "certified_supplier_pct": "Certified sustainable suppliers (number, 0-100)"
+            "takeback_program_pct": "Product lines with take-back programs (number, 0-100; return null if not found)",
+            "packaging_sustainable_pct": "Sustainable packaging percentage (number, 0-100; return null if not found)",
+            "certified_supplier_pct": "Certified sustainable suppliers (number, 0-100; return null if not found)"
         }},
         "sustainable_procurement": {{
-            "procurement_criteria_count": "Sustainability criteria in procurement (number, 0+)",
-            "sustainable_budget_pct": "Procurement budget for sustainable goods (number, 0-100)",
-            "procurement_tracking": "Tracking sustainable procurement (true/false)"
+            "procurement_criteria_count": "Sustainability criteria in procurement (number, 0+; return null if not found)",
+            "sustainable_budget_pct": "Procurement budget for sustainable goods (number, 0-100; return null if not found)",
+            "procurement_tracking": "Tracking sustainable procurement (true/false/null if not found)"
         }},
         "life_cycle_thinking": {{
-            "lca_product_pct": "Products with Life-Cycle Assessment (number, 0-100)",
-            "consumer_comm": "Sustainability info for consumers (true/false)",
-            "lca_improvements": "Product improvements from LCA (number, 0+)"
+            "lca_product_pct": "Products with Life-Cycle Assessment (number, 0-100; return null if not found)",
+            "consumer_comm": "Sustainability info for consumers (true/false/null if not found)",
+            "lca_improvements": "Product improvements from LCA (number, 0+; return null if not found)"
         }},
         "waste_management": {{
-            "food_waste_reduction_pct": "Food/by-product waste reduction (number, 0-100)",
-            "segregation_rate_pct": "Waste segregation rate (number, 0-100)",
-            "circular_partnerships": "Partnerships with circular startups (true/false)"
+            "food_waste_reduction_pct": "Food/by-product waste reduction (number, 0-100; return null if not found)",
+            "segregation_rate_pct": "Waste segregation rate (number, 0-100; return null if not found)",
+            "circular_partnerships": "Partnerships with circular startups (true/false/null if not found)"
         }},
         "tourism_infrastructure": {{
-            "sustainable_material_pct": "Sustainable building materials (number, 0-100)",
-            "eco_tourism_pct": "Eco-tourism practice coverage (number, 0-100)",
-            "energy_water_efficiency": "Energy/water use ≤30% industry average (true/false)"
+            "sustainable_material_pct": "Sustainable building materials (number, 0-100; return null if not found)",
+            "eco_tourism_pct": "Eco-tourism practice coverage (number, 0-100; return null if not found)",
+            "energy_water_efficiency": "Energy/water use ≤30% industry average (true/false/null if not found)"
         }}
     }}
-    Use null for missing data. Do NOT add explanations.
-    PDF Text: {pdf_text[:3000]}"""
     
-    response = get_ai_response(prompt, system_msg="You are a data extractor. Return ONLY valid JSON (no extra text).")
+    PDF Text (expanded excerpt): {pdf_text[:5000]}  # Increased context for better extraction
+    """
+    
+    response = get_ai_response(prompt, system_msg="You are a precise data extractor. Map report terminology to the requested metrics using the provided synonyms. Return ONLY valid JSON.")
     if not response:
         return {}
     
     try:
-        return json.loads(response)
+        extracted_data = json.loads(response)
+        
+        # Validate and flag missing fields for user feedback
+        missing_fields = []
+        for dim_name, dim_values in extracted_data.items():
+            if isinstance(dim_values, dict):  # Check nested metrics
+                for metric, value in dim_values.items():
+                    if value is None:
+                        missing_fields.append(f"{dim_name} → {metric}")
+        
+        # Show user which metrics were found/missing
+        if missing_fields:
+            with st.sidebar.expander("⚠️ Partial Data Extraction", expanded=True):
+                st.info(f"Found {len(extracted_data.keys()) - len(missing_fields)} metrics. Missing:\n" + "\n".join(missing_fields[:5]) + ("..." if len(missing_fields) > 5 else ""))
+        else:
+            st.sidebar.success("✅ All metrics extracted successfully!")
+        
+        return extracted_data
+    
     except json.JSONDecodeError:
-        st.warning(f"⚠️ AI PDF parse failed (invalid JSON). Raw response: {response[:100]}...")
+        st.sidebar.error(f"⚠️ Failed to parse PDF data. Please enter data manually.")
         return {}
 
 def ai_evaluate_unlisted_criteria(dimension):
@@ -245,7 +280,7 @@ def ai_evaluate_unlisted_criteria(dimension):
         return 0
     
     try:
-        return max(0, min(dimension.get("max_ai_score", 5), float(response.strip())))
+        return max(0, min(5, float(response.strip())))  # Cap at 5 to prevent overscoring
     except (ValueError, TypeError):
         st.warning(f"⚠️ Invalid AI score for {dimension['name']}. Defaulting to 0.")
         return 0
@@ -256,24 +291,22 @@ def ai_generate_recommendations():
     scores = data["dimension_scores"]  # Format: {dim_id: {"weighted_score": X, ...}, ...}
     company_industry = data["Industry"]
     
-    # Fix 1: Only include relevant dimensions (skip tourism for non-relevant industries)
-    # Fix 2: Compare the "weighted_score" value (not the full score object) to the threshold
+    # Identify low-performing dimensions (score <50% of max possible weighted score)
     low_dimensions = []
     for dim in DIMENSIONS:
-        # Skip tourism dimension if industry is not in its target list
+        # Skip tourism dimension if industry is not relevant
         if dim["id"] == "tourism_infrastructure" and company_industry not in dim["industries"]:
             continue
         
-        # Get the weighted score for the dimension (default to 0 if missing)
+        # Get weighted score (default to 0 if missing)
         dim_score = scores.get(dim["id"], {}).get("weighted_score", 0)
-        # Calculate 50% of the maximum possible weighted score for the dimension
+        # Calculate 50% of max possible weighted score
         max_weighted_threshold = (dim["max_subtotal"] * dim["weight"]) * 0.5
         
-        # Add to low dimensions if score is below threshold
         if dim_score < max_weighted_threshold:
             low_dimensions.append(dim["name"])
     
-    # If no low dimensions (unlikely), use a fallback list
+    # Fallback if no low dimensions identified
     if not low_dimensions:
         low_dimensions = ["Resource Efficiency (SDG 12.2)", "Circular Economy Integration (SDG 12.5)"]
     
@@ -286,72 +319,71 @@ def ai_generate_recommendations():
     Do NOT use bullet points—number each recommendation (1., 2., 3.)."""
     
     response = get_ai_response(prompt, system_msg="You are a sustainability consultant. Be specific and actionable.")
-    # Return cleaned recommendations (handle empty/error responses)
+    
+    # Fallback recommendations if AI fails
     if not response:
         return [
             "1. Increase renewable energy adoption to 50% by 2026 (SDG 12.2) – Reduces reliance on fossil fuels and cuts carbon emissions by 30%.",
             "2. Expand product take-back programs to cover 50% of product lines (SDG 12.5) – Enhances circularity and reduces end-of-life waste by 25%.",
             "3. Implement eco-design certifications for all core products (SDG 12.3) – Improves product recyclability and aligns with global sustainability standards."
         ]
-    # Split response into numbered items and clean whitespace
+    
+    # Clean and format recommendations
     return [line.strip() for line in response.split("\n") if line.strip() and line.strip()[0].isdigit()]
+
 def ai_generate_mock_esg():
-    """Generate a 300-500 word mock ESG excerpt for the company."""
+    """Generate a project-focused mock ESG excerpt (mimicking real reports)."""
     data = st.session_state["production_data"]
-    scores = data["dimension_scores"]  # Format: {dim_id: {"weighted_score": X, ...}, ...}
-    total_score = data["total_score"]
+    scores = data["dimension_scores"]
     company_industry = data["Industry"]
     
-    # Calculate high-scoring dimensions (score >70% of max possible weighted score)
-    high_dimensions = []
-    for dim in DIMENSIONS:
-        # Skip tourism dimension if industry is not relevant
-        if dim["id"] == "tourism_infrastructure" and company_industry not in dim["industries"]:
-            continue
-        
-        # Get the actual weighted score (default to 0 if missing)
-        dim_score = scores.get(dim["id"], {}).get("weighted_score", 0)
-        # Calculate 70% of the maximum possible weighted score for this dimension
-        high_threshold = (dim["max_subtotal"] * dim["weight"]) * 0.7
-        
-        if dim_score > high_threshold:
-            high_dimensions.append(dim["name"])
+    # Extract key metrics for project context
+    renewable_pct = data["resource_efficiency"]["renewable_energy_pct"]
+    recycled_mat_pct = data["sustainable_production"]["recycled_material_pct"]
+    waste_recycling_pct = data["chemical_waste"]["waste_recycling_pct"]
+    water_reuse_pct = data["resource_efficiency"]["water_reuse_pct"]
     
-    # Calculate low-scoring dimensions (score <50% of max possible weighted score)
-    low_dimensions = []
-    for dim in DIMENSIONS:
-        # Skip tourism dimension if industry is not relevant
-        if dim["id"] == "tourism_infrastructure" and company_industry not in dim["industries"]:
-            continue
-        
-        dim_score = scores.get(dim["id"], {}).get("weighted_score", 0)
-        low_threshold = (dim["max_subtotal"] * dim["weight"]) * 0.5
-        
-        if dim_score < low_threshold:
-            low_dimensions.append(dim["name"])
+    # Identify 1-2 high-impact projects based on strong metrics
+    projects = []
+    if renewable_pct >= 40:
+        projects.append(f"onsite solar installation (completed Q2 2024)")
+    if recycled_mat_pct >= 30:
+        projects.append(f"closed-loop material recycling program (launched 2023)")
+    if water_reuse_pct >= 50:
+        projects.append(f"water reclamation system upgrade (operational since Jan 2024)")
     
-    # Fallbacks if no high/low dimensions are found
-    if not high_dimensions:
-        high_dimensions = ["Chemicals & Waste Management (SDG 12.4)"]
-    if not low_dimensions:
-        low_dimensions = ["Resource Efficiency (SDG 12.2)"]
+    # Default project if no strong metrics
+    if not projects:
+        projects = [f"pilot sustainable procurement initiative (initiated Q3 2024)"]
     
-    prompt = f"""Write a 300-500 word mock ESG report excerpt for {data['Company Name']} (Industry: {data['Industry']}).
-    Include:
-    1. Introduction to their production sustainability efforts.
-    2. Key metrics: renewable energy use ({data['resource_efficiency']['renewable_energy_pct']}%), recycled materials ({data['sustainable_production']['recycled_material_pct']}%), waste recycling ({data['chemical_waste']['waste_recycling_pct']}%).
-    3. Strengths (high-scoring dimensions: {high_dimensions}).
-    4. Areas for improvement (low-scoring dimensions: {low_dimensions}).
-    5. Future goals aligned with SDG 12.
-    Use a formal, professional tone (like real ESG reports). Do NOT use bullet points."""
+    prompt = f"""Write a 300-500 word excerpt from an ESG report for {data['Company Name']} (Industry: {company_industry}). 
+    Focus EXCLUSIVELY on a specific sustainability project/action (not company overview) that demonstrates progress toward SDG 12. 
+    Follow these rules:
+    1. Open with the project name and timeline (e.g., "In 2024, we expanded our waste recycling program...").
+    2. Include 3+ specific metrics (e.g., "reduced hazardous waste by 27%", "15,000 tons of recycled material reused").
+    3. Link directly to 1+ SDG 12 targets (e.g., SDG 12.2 for resource efficiency, SDG 12.5 for circular economy).
+    4. Mention challenges (e.g., "initial supplier resistance") and mitigation (e.g., "partnered with 3 local recyclers").
+    5. Add forward-looking data (e.g., "targeting 45% renewable energy by 2026").
+    6. Use formal, concise language (avoid jargon; mimic tone of Unilever/Apple ESG reports).
+    7. Do NOT reintroduce the company or its mission—assume readers know this from earlier sections.
     
-    return get_ai_response(prompt, system_msg="You are an ESG report writer. Write in a formal, concise style.") or """EcoManufacture Inc. (Manufacturing) is committed to advancing SDG 12 (Responsible Consumption and Production) through its production operations. In 2024, the company sourced 30% of its energy from renewable sources (solar and wind), utilized 20% recycled raw materials in production, and achieved a 50% production waste recycling rate—reflecting progress toward circularity.
+    Key metrics to reference:
+    - Renewable energy: {renewable_pct}% of production needs
+    - Recycled materials: {recycled_mat_pct}% in core products
+    - Waste recycling: {waste_recycling_pct}% of production waste
+    - Featured project examples: {', '.join(projects)}"""
+    
+    # Realistic fallback excerpt (mimicking Apple/Unilever reports)
+    fallback = f"""In 2024, {data['Company Name']} scaled its closed-loop material recycling program across three manufacturing facilities, building on the success of our 2023 pilot. The initiative, aligned with SDG 12.5 (substantially reduce waste generation), focused on reclaiming post-production plastic scrap and reprocessing it for use in new product components.
 
-Strengths include waste management (segregation rate of 60%) and sustainable procurement (2 sustainability criteria in procurement policies), which have reduced operational environmental impact by 15% year-over-year. The company also complies with international chemical management standards (REACH), minimizing hazardous material risks.
+During the reporting period, the program diverted 1,240 metric tons of plastic from landfills—equivalent to 32% of total production waste—representing a 17% increase from 2023. Of this, 890 metric tons (72% of reclaimed material) was reused in our core product line, reducing virgin plastic procurement by {recycled_mat_pct}% and lowering carbon emissions by 1,850 tons (due to reduced transportation of raw materials).
 
-Key areas for improvement include resource efficiency (water reuse rate of 40% below the 70% target) and circular economy integration (only 20% of product lines have take-back programs). Life-cycle thinking efforts are also nascent, with LCAs conducted for just 20% of product lines.
+Implementation challenges included inconsistent scrap quality, which initially limited reuse rates to 58%. To address this, we partnered with two third-party recycling specialists to upgrade sorting equipment, increasing usable output by 24% within six months.
 
-Looking ahead, EcoManufacture aims to increase renewable energy to 50% by 2026 (SDG 12.2), expand take-back programs to 50% of products (SDG 12.5), and achieve 70% water reuse (SDG 12.2)—aligning with its long-term vision of carbon-neutral production by 2030."""
+Looking ahead, we aim to expand the program to all five manufacturing sites by 2026, targeting 45% of production waste recycling (up from current {waste_recycling_pct}%) and 50% recycled material content in core products—directly contributing to SDG 12.3 (halve per capita global food waste) and our broader 2030 carbon neutrality commitment."""
+    
+    return get_ai_response(prompt, system_msg="You are an ESG report writer. Mimic the concise, data-heavy style of Fortune 500 ESG reports.") or fallback
+
 # --- Helper Functions ---
 def extract_pdf_text(uploaded_file):
     """Extract text from uploaded PDF."""
@@ -441,6 +473,42 @@ def generate_report_content():
     
     return content, recommendations, mock_excerpt
 
+# --- ESG Report Writing Recommendations ---
+def display_writing_recommendations():
+    st.subheader("✏️ ESG Report Writing Guidelines (SDG 12 Focus)")
+    st.markdown("""
+    Use these best practices to draft credible, impactful ESG report sections focused on production sustainability:
+    
+    ### 1. Focus on Specific Projects (Not General Claims)
+    - **Bad**: "We improved resource efficiency."  
+    - **Good**: "In 2024, we installed a water reclamation system at our Detroit plant, reducing freshwater use by 40M gallons/year (32% of total consumption)."  
+
+    ### 2. Anchor Metrics to Context
+    Always include:  
+    - Baseline comparisons (e.g., "up from 18% in 2022")  
+    - Industry benchmarks (e.g., "exceeds sector average of 22%")  
+    - Future targets (e.g., "targeting 50% by 2026")  
+
+    ### 3. Explicitly Link to SDG 12 Targets
+    Specify which target your action supports:  
+    - SDG 12.2: Sustainable management of resources (energy/water efficiency)  
+    - SDG 12.5: Reduce waste generation (recycling, circular design)  
+    - SDG 12.7: Sustainable procurement (supplier standards)  
+
+    ### 4. Acknowledge Challenges
+    Build credibility by noting setbacks and solutions:  
+    - "Initial recycling rates were 15% below target due to supplier quality issues. We addressed this by launching a training program, improving rates to 85% by Q4."  
+
+    ### 5. Avoid Greenwashing Jargon
+    Replace vague terms with specifics:  
+    - Instead of "eco-friendly," use "100% renewable electricity-powered production"  
+    - Instead of "circular economy," use "90% of product components are recyclable"  
+
+    ### 6. Highlight Stakeholder Collaboration
+    Show collective impact:  
+    - "Partnered with the Ellen MacArthur Foundation to redesign 3 product lines for circularity, reducing material waste by 27%."  
+    """)
+
 # --- Sidebar UI (Data Input) ---
 st.sidebar.header("📊 Data Input")
 
@@ -452,18 +520,31 @@ if uploaded_pdf:
         pdf_text = extract_pdf_text(uploaded_pdf)
         st.session_state["production_data"]["extracted_pdf_text"] = pdf_text
         
-        with st.sidebar.expander("View Extracted Text", expanded=False):
-            st.text_area("PDF Content", pdf_text, height=200, disabled=True)
+        # Show more extracted text for user verification
+        with st.sidebar.expander("View Extracted Text (for verification)", expanded=False):
+            st.text_area("PDF Content (first 5000 chars)", pdf_text[:5000], height=300, disabled=True)
         
         if OPENAI_AVAILABLE:
-            with st.spinner("🤖 Analyzing ESG data..."):
+            with st.spinner("🤖 Analyzing ESG data (looking for metrics like 'renewable energy' or 'recycled materials')..."):
                 esg_data = ai_extract_esg_data(pdf_text)
                 if esg_data:
-                    st.sidebar.success("✅ AI populated data! Review and edit below.")
-                    # Update session state with extracted data
+                    # Update session state with extracted data (only non-null values)
+                    updated = False
                     for key, value in esg_data.items():
                         if key in st.session_state["production_data"] and value is not None:
-                            st.session_state["production_data"][key] = value
+                            # For nested dimensions, only update non-null metrics
+                            if isinstance(value, dict):
+                                for subkey, subval in value.items():
+                                    if subval is not None:
+                                        st.session_state["production_data"][key][subkey] = subval
+                                        updated = True
+                            else:  # For top-level fields (company name, industry)
+                                st.session_state["production_data"][key] = value
+                                updated = True
+                    if updated:
+                        st.sidebar.success("✅ Populated available metrics from PDF! Review and fill missing fields below.")
+                else:
+                    st.sidebar.warning("⚠️ No valid data extracted. Please enter data manually.")
 
 # 2. Basic Company Info
 st.sidebar.subheader("2. Company Information")
@@ -638,7 +719,10 @@ if OPENAI_AVAILABLE:
 else:
     st.info("ℹ️ Enable AI (with OPENAI_API_KEY) to generate a mock ESG excerpt.")
 
-# 6. Report Export
+# 6. ESG Writing Guidelines
+display_writing_recommendations()
+
+# 7. Report Export
 st.subheader("📥 Export Report")
 if scores:
     report_content, _, _ = generate_report_content()
