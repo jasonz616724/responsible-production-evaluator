@@ -135,7 +135,7 @@ def ai_extract_data(text, industry):
 
     try:
         response = client.chat.completions.create(
-            model="gpt-5",  # Use GPT-5 (replace with "gpt-4o" if unavailable)
+            model="gpt-4o",  # Use GPT-5 (replace with "gpt-4o" if unavailable)
             messages=[
                 {"role": "system", "content": "You are a precise data extractor. Return only JSON."},
                 {"role": "user", "content": f"{prompt}\n\nReport Text:\n{text}"}
@@ -192,7 +192,7 @@ def generate_recommendations():
 
     try:
         response = client.chat.completions.create(
-            model="gpt-5",  # Use GPT-5 (replace with "gpt-4o" if unavailable)
+            model="gpt-4o",  # Use GPT-5 (replace with "gpt-4o" if unavailable)
             messages=[{"role": "user", "content": prompt}],
             temperature=0.4
         )
