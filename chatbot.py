@@ -1,49 +1,45 @@
 import streamlit as st
 import json
-import fitz  # PyMuPDF for PDF text extraction
-# Fix: Explicitly import OpenAI exceptions
-from openai import OpenAI, APIError, Timeout
+import fitz
+from openai import OpenAI
 import re
 
 # --- Page Configuration ---
 st.set_page_config(page_title="Sustainability Chatbot", layout="wide")
 st.title("🌱 Production Sustainability Evaluator")
-st.write("Assess your sustainability efforts—upload an ESG report (sidebar) or answer a few questions!")
+st.write("Assess your sustainability efforts—upload an ESG report (sidebar) or answer questions!")
 
-# --- OpenAI Client Setup ---
+# --- OpenAI Setup ---
 try:
     client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
     OPENAI_AVAILABLE = True
 except KeyError:
-    st.warning("⚠️ OpenAI API key not found. AI features (report analysis) disabled.")
+    st.warning("⚠️ OpenAI API key not found. AI features disabled.")
     OPENAI_AVAILABLE = False
 except Exception as e:
     st.error(f"⚠️ OpenAI initialization failed: {str(e)}")
     OPENAI_AVAILABLE = False
 
-# --- Session State Initialization ---
+# --- Session State ---
 if "chat" not in st.session_state:
     st.session_state["chat"] = {
-        "history": [],  # Stores conversation messages
-        "mode": None,   # "upload" or "manual"
+        "history": [],
+        "mode": None,
         "data": {
             "company": "",
             "industry": "",
-            # Resource efficiency metrics (aligned with 12.2)
             "resource_use": {
                 "renewable_energy_pct": 0,
                 "water_reuse_pct": 0,
                 "energy_saving_tech": 0,
                 "extra_resource": ""
             },
-            # Materials/waste metrics (aligned with 12.3)
             "materials_waste": {
                 "recycled_materials_pct": 0,
                 "waste_reduction_pct": 0,
                 "eco_certified_products": False,
                 "extra_materials": ""
             },
-            # Circular economy metrics (aligned with 12.5)
             "circular_practices": {
                 "product_takeback_pct": 0,
                 "sustainable_packaging_pct": 0,
@@ -54,12 +50,12 @@ if "chat" not in st.session_state:
             "breakdown": {},
             "recommendations": []
         },
-        "manual_round": 1,  # 4 rounds total
+        "manual_round": 1,
         "completed": False,
-        "pdf_text": ""  # Stored PDF text for extraction
+        "pdf_text": ""
     }
 
-# --- Scoring Framework (Hidden SDG Alignment) ---
+# --- Scoring Framework ---
 THEMES = [
     {
         "name": "Resource Use Efficiency",
@@ -95,68 +91,113 @@ THEMES = [
 
 # --- Core Functions ---
 def extract_pdf_text(uploaded_file):
-    """Extract text from PDF (supports large files)"""
     try:
         with fitz.open(stream=uploaded_file.read(), filetype="pdf") as doc:
-            full_text = "\n".join(page.get_text() for page in doc)
-            return full_text[:200000]  # Limit to 200k chars for GPT-5
+            return "\n".join(page.get_text() for page in doc)[:200000]
     except Exception as e:
-        st.error(f"⚠️ PDF extraction failed: {str(e)} (Is the file password-protected?)")
+        st.error(f"⚠️ PDF extraction failed: {str(e)}")
         return ""
 
+def ai_refine_estimate(metric, context, industry):
+    """AI callback to refine estimates for missing data"""
+    prompt = f"""Estimate a realistic {metric} percentage for a {industry} company based on this context: "{context}".
+    The company's report mentions related details but no direct number. Use industry benchmarks to guess.
+    Return ONLY a number between 0-100 (no explanations)."""
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            timeout=10
+        )
+        return int(response.choices[0].message.content.strip())
+    except:
+        return 0  # Fallback to 0 if refinement fails
+
 def ai_extract_data(text, industry):
-    """Extract sustainability data using GPT-5"""
+    """Extract ESG data with emphasis on analysis and estimation"""
     if not OPENAI_AVAILABLE:
         return None
 
-    prompt = f"""analyse environmental or production related data from this report (industry: {industry}), feel free to estimate the percentages and information for the complete text below if there is no direct data.
+    # Primary extraction prompt with new instructions
+    prompt = f"""Analyze environmental and production-related data from this report (industry: {industry}).
+    Focus on resource use, materials/waste, and circular practices. 
+    If direct percentages or data are missing, ESTIMATE using context clues and industry norms.
+    Explain your reasoning for estimates in the "extra_*" fields (e.g., "Estimated 30% renewable energy because report says 'significant solar adoption'").
+    
     Return ONLY a valid JSON object with these fields:
     {{
         "company": "Company name (string, 'Unknown' if missing)",
         "resource_use": {{
-            "renewable_energy_pct": number (0-100, % renewable energy; 0 if missing),
-            "water_reuse_pct": number (0-100, % water reused; 0 if missing),
-            "energy_saving_tech": number (count of energy-saving technologies; 0 if missing),
-            "extra_resource": "Additional resource details (string, empty if none)"
+            "renewable_energy_pct": number (0-100, % renewable energy; estimate if missing),
+            "water_reuse_pct": number (0-100, % water reused; estimate if missing),
+            "energy_saving_tech": number (count of energy-saving technologies; estimate if missing),
+            "extra_resource": "Details/reasoning for estimates (string)"
         }},
         "materials_waste": {{
-            "recycled_materials_pct": number (0-100, % recycled materials; 0 if missing),
-            "waste_reduction_pct": number (0-100, % waste reduced vs last year; 0 if missing),
-            "eco_certified_products": boolean (true/false for eco-certifications),
-            "extra_materials": "Additional materials/waste details (string, empty if none)"
+            "recycled_materials_pct": number (0-100, % recycled materials; estimate if missing),
+            "waste_reduction_pct": number (0-100, % waste reduced vs last year; estimate if missing),
+            "eco_certified_products": boolean (true/false; infer from context if unclear),
+            "extra_materials": "Details/reasoning for estimates (string)"
         }},
         "circular_practices": {{
-            "product_takeback_pct": number (0-100, % product lines with take-back; 0 if missing),
-            "sustainable_packaging_pct": number (0-100, % sustainable packaging; 0 if missing),
-            "supplier_sustainability_pct": number (0-100, % sustainable suppliers; 0 if missing),
-            "extra_circular": "Additional circular economy details (string, empty if none)"
+            "product_takeback_pct": number (0-100, % product lines with take-back; estimate if missing),
+            "sustainable_packaging_pct": number (0-100, % sustainable packaging; estimate if missing),
+            "supplier_sustainability_pct": number (0-100, % sustainable suppliers; estimate if missing),
+            "extra_circular": "Details/reasoning for estimates (string)"
         }}
     }}"""
 
     try:
+        # First pass: Extract and estimate from report
         response = client.chat.completions.create(
-            model="gpt-4o",  # Use GPT-5 (replace with "gpt-4o" if unavailable)
+            model="gpt-4o",
             messages=[
-                {"role": "system", "content": "You are a precise data extractor. Return only JSON."},
+                {"role": "system", "content": "You are an expert ESG analyst. Prioritize realistic estimates for missing data."},
                 {"role": "user", "content": f"{prompt}\n\nReport Text:\n{text}"}
             ],
-            temperature=0.1,
+            temperature=0.2,
             response_format={"type": "json_object"},
             timeout=60
         )
-        return json.loads(response.choices[0].message.content)
+        extracted = json.loads(response.choices[0].message.content)
+
+        # Second pass: Refine critical estimates with AI callbacks
+        # Example 1: Refine renewable energy if estimate seems low/uncertain
+        if extracted["resource_use"]["renewable_energy_pct"] < 10 and "estimated" in extracted["resource_use"]["extra_resource"].lower():
+            extracted["resource_use"]["renewable_energy_pct"] = ai_refine_estimate(
+                "renewable energy", 
+                extracted["resource_use"]["extra_resource"], 
+                industry
+            )
+
+        # Example 2: Refine recycled materials if data is missing
+        if extracted["materials_waste"]["recycled_materials_pct"] == 0 and "no data" in extracted["materials_waste"]["extra_materials"].lower():
+            extracted["materials_waste"]["recycled_materials_pct"] = ai_refine_estimate(
+                "recycled materials", 
+                "Report provides no data on recycled materials", 
+                industry
+            )
+
+        # Example 3: Refine sustainable packaging estimate
+        if extracted["circular_practices"]["sustainable_packaging_pct"] == 0:
+            extracted["circular_practices"]["sustainable_packaging_pct"] = ai_refine_estimate(
+                "sustainable packaging", 
+                extracted["circular_practices"]["extra_circular"], 
+                industry
+            )
+
+        return extracted
+
     except json.JSONDecodeError:
-        st.error("⚠️ Could not parse GPT-5's response. Using manual input.")
-        return None
-    except (APIError, Timeout) as e:
-        st.error(f"⚠️ GPT-5 error: {str(e)}. Try manual input.")
+        st.error("⚠️ Could not parse AI response. Using manual input.")
         return None
     except Exception as e:
-        st.error(f"⚠️ Unexpected error: {str(e)}. Using manual input.")
+        st.error(f"⚠️ Data extraction failed: {str(e)}. Using manual input.")
         return None
 
 def calculate_score():
-    """Calculate total sustainability score"""
     data = st.session_state["chat"]["data"]
     breakdown = {}
     total = 0
@@ -176,7 +217,6 @@ def calculate_score():
     data["total_score"] = min(100, round(total, 1))
 
 def generate_recommendations():
-    """Generate sustainability recommendations"""
     data = st.session_state["chat"]["data"]
     if not OPENAI_AVAILABLE:
         return [
@@ -185,28 +225,27 @@ def generate_recommendations():
             "Develop product take-back programs to support circular economy."
         ]
 
-    prompt = f"""Generate 3 actionable sustainability recommendations for {data['company']} ({data['industry']}).
-    Use the following performance data: {data['breakdown']}
-    Consider extra context: {data['resource_use']['extra_resource']}; {data['materials_waste']['extra_materials']}; {data['circular_practices']['extra_circular']}
-    Link recommendations to responsible production goals. Keep language simple."""
+    prompt = f"""Generate 3 actionable recommendations for {data['company']} ({data['industry']}).
+    Use their performance data: {data['breakdown']}
+    Consider estimation context: {data['resource_use']['extra_resource']}; {data['materials_waste']['extra_materials']}
+    Focus on improving weak areas. Link to responsible production goals."""
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",  # Use GPT-5 (replace with "gpt-4o" if unavailable)
+            model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.4
         )
         return [line.strip() for line in response.choices[0].message.content.split("\n") if line.strip()]
-    except Exception:
-        return ["Prioritize energy efficiency upgrades.", "Reduce waste through material recycling.", "Strengthen supplier sustainability standards."]
+    except Exception as e:
+        st.warning(f"⚠️ Could not generate recommendations: {str(e)}")
+        return ["Prioritize energy efficiency upgrades.", "Reduce waste through recycling.", "Strengthen supplier sustainability."]
 
-# --- Chat UI Helpers ---
+# --- Chat Helpers ---
 def add_msg(role, content):
-    """Add message to chat history"""
     st.session_state["chat"]["history"].append({"role": role, "content": content})
 
 def display_chat():
-    """Display chat history with avatars"""
     for msg in st.session_state["chat"]["history"]:
         avatar = "🤖" if msg["role"] == "assistant" else "👤"
         with st.chat_message(msg["role"], avatar=avatar):
@@ -219,34 +258,35 @@ chat = st.session_state["chat"]
 st.sidebar.subheader("📄 Upload ESG Report")
 uploaded_pdf = st.sidebar.file_uploader("Select a PDF report", type="pdf")
 
-# Handle new PDF upload
 if uploaded_pdf and chat["mode"] != "upload_industry":
     with st.spinner("Extracting text from PDF..."):
         chat["pdf_text"] = extract_pdf_text(uploaded_pdf)
         if chat["pdf_text"]:
             chat["mode"] = "upload_industry"
             add_msg("user", "I uploaded our sustainability report.")
-            add_msg("assistant", "Thanks! To better analyze, what industry is your company in? (e.g., Manufacturing, Retail)")
+            add_msg("assistant", "Thanks! To better analyze, what industry are you in? (e.g., Manufacturing, Retail)")
         st.rerun()
 
-# Upload flow: Ask for industry
 if chat["mode"] == "upload_industry" and not chat["completed"]:
     display_chat()
     industry = st.chat_input("Your industry:")
     if industry:
         add_msg("user", industry)
-        with st.spinner("Analyzing report with GPT-5..."):
+        with st.spinner("Analyzing report (including estimates where data is missing)..."):
             extracted_data = ai_extract_data(chat["pdf_text"], industry)
             if extracted_data:
                 chat["data"] = {**chat["data"],** extracted_data, "industry": industry}
-                add_msg("assistant", f"Got it, {chat['data']['company']}! Any extra details about your sustainability efforts to share?")
+                # Show estimation logic to user for transparency
+                add_msg("assistant", f"Got it, {chat['data']['company']}! Here's what I found (with estimates where needed):\n"
+                                    f"- Resource use: {chat['data']['resource_use']['extra_resource']}\n"
+                                    f"- Materials/waste: {chat['data']['materials_waste']['extra_materials']}\n"
+                                    "Any extra details to add?")
                 chat["mode"] = "upload_final"
             else:
                 add_msg("assistant", "Let's try manual input instead. What's your company name?")
                 chat["mode"] = "manual"
         st.rerun()
 
-# Upload flow: Final input
 if chat["mode"] == "upload_final" and not chat["completed"]:
     display_chat()
     extra = st.chat_input("Add extra details (or 'done'):")
@@ -258,11 +298,10 @@ if chat["mode"] == "upload_final" and not chat["completed"]:
         chat["completed"] = True
         st.rerun()
 
-# Manual input flow
+# Manual Flow (Unchanged)
 if chat["mode"] == "manual" and not chat["completed"]:
     display_chat()
 
-    # Round 1: Company name
     if chat["manual_round"] == 1:
         company = st.chat_input("Let's start with your company name:")
         if company:
@@ -272,7 +311,6 @@ if chat["mode"] == "manual" and not chat["completed"]:
             add_msg("assistant", f"Nice to meet you, {company}! What industry are you in?")
             st.rerun()
 
-    # Round 2: Industry + Resource use
     elif chat["manual_round"] == 2:
         if not chat["data"]["industry"]:
             industry = st.chat_input("Your industry:")
@@ -283,13 +321,12 @@ if chat["mode"] == "manual" and not chat["completed"]:
 - What % of your energy comes from renewable sources (e.g., solar, wind)?
 - What % of water do you reuse or recycle?
 - How many energy-saving technologies do you use (e.g., LED, solar panels)?
-Feel free to add anything else about resource efficiency!""")
+Feel free to add anything else!""")
                 st.rerun()
         else:
             res_info = st.chat_input("Share your resource use details:")
             if res_info:
                 add_msg("user", res_info)
-                # Simple parsing with regex
                 chat["data"]["resource_use"]["renewable_energy_pct"] = int(re.findall(r"(\d+)%.*energy", res_info)[0]) if re.findall(r"(\d+)%.*energy", res_info) else 0
                 chat["data"]["resource_use"]["water_reuse_pct"] = int(re.findall(r"(\d+)%.*water", res_info)[0]) if re.findall(r"(\d+)%.*water", res_info) else 0
                 chat["data"]["resource_use"]["energy_saving_tech"] = int(re.findall(r"(\d+).*energy-saving", res_info)[0]) if re.findall(r"(\d+).*energy-saving", res_info) else 0
@@ -302,7 +339,6 @@ Feel free to add anything else about resource efficiency!""")
 Add any other details!""")
                 st.rerun()
 
-    # Round 3: Materials & waste
     elif chat["manual_round"] == 3:
         mat_info = st.chat_input("Share your materials/waste details:")
         if mat_info:
@@ -319,7 +355,6 @@ Add any other details!""")
 Add any other circular efforts!""")
             st.rerun()
 
-    # Round 4: Circular practices
     elif chat["manual_round"] == 4:
         circ_info = st.chat_input("Share your circular practices details:")
         if circ_info:
@@ -333,7 +368,7 @@ Add any other circular efforts!""")
             chat["completed"] = True
             st.rerun()
 
-# Display results
+# Display Results
 if chat["completed"]:
     display_chat()
     data = st.session_state["chat"]["data"]
@@ -348,10 +383,15 @@ if chat["completed"]:
         for i, rec in enumerate(data["recommendations"], 1):
             st.write(f"{i}. {rec}")
         
-        # Download report
+        # Show estimation logic in report for transparency
         report = f"""Sustainability Report for {data['company']}
 Industry: {data['industry']}
 Total Score: {data['total_score']}/100
+
+Data Sources & Estimates:
+- Resource Use: {data['resource_use']['extra_resource']}
+- Materials/Waste: {data['materials_waste']['extra_materials']}
+- Circular Practices: {data['circular_practices']['extra_circular']}
 
 Breakdown:
 {json.dumps(data['breakdown'], indent=2)}
@@ -386,7 +426,7 @@ Recommendations:
             }
             st.rerun()
 
-# Initial prompt (no mode selected)
+# Initial Prompt
 if chat["mode"] is None and not chat["completed"] and not uploaded_pdf:
     add_msg("assistant", "Hi! I can assess your sustainability efforts. Upload an ESG report (sidebar) or type 'start' to answer questions.")
     display_chat()
