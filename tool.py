@@ -266,7 +266,56 @@ def ai_extract_esg_data(pdf_text):
     except json.JSONDecodeError:
         st.sidebar.error(f"⚠️ Failed to parse PDF data. Please enter data manually.")
         return {}
-
+def manual_pdf_mapping(pdf_text):
+    """Let users manually select PDF text snippets for missing metrics."""
+    st.sidebar.subheader("📌 Manual PDF Metric Mapping")
+    st.sidebar.info("Select text from the PDF that contains the missing metrics:")
+    
+    # Show truncated PDF text with line numbers for reference
+    pdf_lines = [f"Line {i+1}: {line[:100]}..." for i, line in enumerate(pdf_text.split('\n')) if line.strip()]
+    selected_line = st.sidebar.selectbox("Find relevant line in PDF:", pdf_lines, index=0)
+    
+    # Extract actual text from selected line
+    if selected_line:
+        line_text = pdf_text.split('\n')[int(selected_line.split(":")[0].split()[1])-1].strip()
+        st.sidebar.text(f"Selected text: {line_text[:150]}...")
+        
+        # Let user map this text to a missing metric
+        missing_metrics = [
+            "resource_efficiency → renewable_energy_pct",
+            "resource_efficiency → energy_tech_count",
+            "resource_efficiency → water_reuse_pct",
+            "sustainable_production → recycled_material_pct",
+            "sustainable_production → waste_intensity_pct",
+            "sustainable_production → eco_design_cert",
+            "chemical_waste → hazardous_reduction_pct",
+            "chemical_waste → waste_recycling_pct",
+            "chemical_waste → chemical_compliance"
+        ]
+        
+        target_metric = st.sidebar.selectbox("Map this text to which metric?", missing_metrics)
+        if st.sidebar.button("Extract from this line", key="manual_extract"):
+            # Use AI to extract the specific metric from the selected line
+            dim_id, metric = target_metric.split(" → ")
+            prompt = f"""Extract the numeric value (or true/false) for {metric} from this text: "{line_text}".
+            Return ONLY the value (number, true, or false) with no explanation."""
+            
+            value = get_ai_response(prompt, system_msg="You are a data extractor. Return ONLY the requested value.")
+            if value:
+                try:
+                    # Convert to appropriate type
+                    if value.lower() in ["true", "false"]:
+                        parsed_value = value.lower() == "true"
+                    else:
+                        parsed_value = float(value)
+                    
+                    # Update session state
+                    st.session_state["production_data"][dim_id][metric] = parsed_value
+                    st.sidebar.success(f"✅ Updated {target_metric} to {parsed_value}")
+                    st.session_state["rerun_trigger"] = True
+                except ValueError:
+                    st.sidebar.error(f"Could not parse '{value}' as a number/boolean. Try another line.")
+                    
 def ai_evaluate_unlisted_criteria(dimension):
     """Evaluate AI-only criteria for a dimension."""
     data = st.session_state["production_data"][dimension["id"]]
@@ -515,37 +564,47 @@ st.sidebar.header("📊 Data Input")
 # 1. PDF Upload
 st.sidebar.subheader("1. Upload ESG Report (Optional)")
 uploaded_pdf = st.sidebar.file_uploader("Upload PDF for AI Data Extraction", type="pdf")
+# Replace the existing PDF upload handling with this:
 if uploaded_pdf:
     with st.spinner("🔍 Extracting text from PDF..."):
         pdf_text = extract_pdf_text(uploaded_pdf)
         st.session_state["production_data"]["extracted_pdf_text"] = pdf_text
         
-        # Show more extracted text for user verification
         with st.sidebar.expander("View Extracted Text (for verification)", expanded=False):
             st.text_area("PDF Content (first 5000 chars)", pdf_text[:5000], height=300, disabled=True)
         
         if OPENAI_AVAILABLE:
-            with st.spinner("🤖 Analyzing ESG data (looking for metrics like 'renewable energy' or 'recycled materials')..."):
+            with st.spinner("🤖 Analyzing ESG data..."):
                 esg_data = ai_extract_esg_data(pdf_text)
                 if esg_data:
-                    # Update session state with extracted data (only non-null values)
+                    # Update with extracted data
                     updated = False
                     for key, value in esg_data.items():
                         if key in st.session_state["production_data"] and value is not None:
-                            # For nested dimensions, only update non-null metrics
                             if isinstance(value, dict):
                                 for subkey, subval in value.items():
                                     if subval is not None:
                                         st.session_state["production_data"][key][subkey] = subval
                                         updated = True
-                            else:  # For top-level fields (company name, industry)
+                            else:
                                 st.session_state["production_data"][key] = value
                                 updated = True
                     if updated:
-                        st.sidebar.success("✅ Populated available metrics from PDF! Review and fill missing fields below.")
+                        st.sidebar.success("✅ Populated available metrics from PDF!")
+                    
+                    # Check for missing metrics and offer manual mapping
+                    missing_fields = []
+                    for dim_name, dim_values in esg_data.items():
+                        if isinstance(dim_values, dict):
+                            for metric, value in dim_values.items():
+                                if value is None:
+                                    missing_fields.append(f"{dim_name} → {metric}")
+                    
+                    if missing_fields:
+                        manual_pdf_mapping(pdf_text)  # Add manual mapping tool
                 else:
-                    st.sidebar.warning("⚠️ No valid data extracted. Please enter data manually.")
-
+                    st.sidebar.warning("⚠️ No valid data extracted. Try manual mapping below.")
+                    manual_pdf_mapping(pdf_text)  # Show manual tool even if extraction failed
 # 2. Basic Company Info
 st.sidebar.subheader("2. Company Information")
 company_name = st.sidebar.text_input(
