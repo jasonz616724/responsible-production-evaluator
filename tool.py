@@ -253,8 +253,29 @@ def ai_evaluate_unlisted_criteria(dimension):
 def ai_generate_recommendations():
     """Generate tailored improvement recommendations based on scores."""
     data = st.session_state["production_data"]
-    scores = data["dimension_scores"]
-    low_dimensions = [dim["name"] for dim in DIMENSIONS if scores.get(dim["id"], 0) < (dim["max_subtotal"] * dim["weight"]) * 0.5]
+    scores = data["dimension_scores"]  # Format: {dim_id: {"weighted_score": X, ...}, ...}
+    company_industry = data["Industry"]
+    
+    # Fix 1: Only include relevant dimensions (skip tourism for non-relevant industries)
+    # Fix 2: Compare the "weighted_score" value (not the full score object) to the threshold
+    low_dimensions = []
+    for dim in DIMENSIONS:
+        # Skip tourism dimension if industry is not in its target list
+        if dim["id"] == "tourism_infrastructure" and company_industry not in dim["industries"]:
+            continue
+        
+        # Get the weighted score for the dimension (default to 0 if missing)
+        dim_score = scores.get(dim["id"], {}).get("weighted_score", 0)
+        # Calculate 50% of the maximum possible weighted score for the dimension
+        max_weighted_threshold = (dim["max_subtotal"] * dim["weight"]) * 0.5
+        
+        # Add to low dimensions if score is below threshold
+        if dim_score < max_weighted_threshold:
+            low_dimensions.append(dim["name"])
+    
+    # If no low dimensions (unlikely), use a fallback list
+    if not low_dimensions:
+        low_dimensions = ["Resource Efficiency (SDG 12.2)", "Circular Economy Integration (SDG 12.5)"]
     
     prompt = f"""Generate 3 specific, actionable sustainability recommendations for {data['Company Name']} (Industry: {data['Industry']}).
     Focus on their low-performing areas: {low_dimensions}.
@@ -265,10 +286,15 @@ def ai_generate_recommendations():
     Do NOT use bullet points—number each recommendation (1., 2., 3.)."""
     
     response = get_ai_response(prompt, system_msg="You are a sustainability consultant. Be specific and actionable.")
-    return response.split("\n") if response else ["1. Improve resource efficiency by increasing renewable energy adoption (SDG 12.2).", 
-                                                  "2. Enhance waste recycling to reduce landfill impact (SDG 12.5).", 
-                                                  "3. Implement eco-design certifications for products (SDG 12.3)."]
-
+    # Return cleaned recommendations (handle empty/error responses)
+    if not response:
+        return [
+            "1. Increase renewable energy adoption to 50% by 2026 (SDG 12.2) – Reduces reliance on fossil fuels and cuts carbon emissions by 30%.",
+            "2. Expand product take-back programs to cover 50% of product lines (SDG 12.5) – Enhances circularity and reduces end-of-life waste by 25%.",
+            "3. Implement eco-design certifications for all core products (SDG 12.3) – Improves product recyclability and aligns with global sustainability standards."
+        ]
+    # Split response into numbered items and clean whitespace
+    return [line.strip() for line in response.split("\n") if line.strip() and line.strip()[0].isdigit()]
 def ai_generate_mock_esg():
     """Generate a 300-500 word mock ESG excerpt for the company."""
     data = st.session_state["production_data"]
