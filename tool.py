@@ -238,47 +238,55 @@ def ai_extract_esg_data():
     - "LCA for products": lca_product_pct
     """
     
-    prompt = f"""Extract SDG 12 production metrics from this GSK ESG Report text. Use the terminology map below to match GSK terms to metrics.
+def ai_extract_esg_data():
+    # ... (keep existing code) ...
+
+    prompt = f"""Extract SDG 12 production metrics from this GSK ESG Report text. 
+    CRITICAL RULES:
+    1. Return ONLY NUMBERS (no percentages, e.g., write 83 not "83%")
+    2. Return 0 for missing data (NEVER use null)
+    3. For booleans, return true/false ONLY
+    
     {gsk_terminology}
     
-    Return ONLY valid JSON (no extra text). Use null for missing data.
+    Return ONLY valid JSON (no extra text):
     {{
-        "company_name": "Extract company name (should be GSK PLC)",
-        "industry": "Pharmaceuticals (fixed for GSK)",
+        "company_name": "GSK PLC (fixed)",
+        "industry": "Pharmaceuticals (fixed)",
         "resource_efficiency": {{
-            "renewable_energy_pct": "Renewable electricity % (e.g., 83%)",
-            "energy_tech_count": "Number of energy-efficient tech (solar, wind, heat recovery)",
-            "water_reuse_pct": "Water reduction vs baseline % (e.g., 24%)"
+            "renewable_energy_pct": "Number (0-100, no %)",
+            "energy_tech_count": "Number (0+)",
+            "water_reuse_pct": "Number (0-100)"
         }},
         "sustainable_production": {{
-            "recycled_material_pct": "Recycled material % (e.g., paper packaging)",
-            "waste_intensity_pct": "Waste intensity vs industry average %",
-            "eco_design_cert": "Low-carbon products (Ventolin) or eco-design cert (true/false)"
+            "recycled_material_pct": "Number (0-100)",
+            "waste_intensity_pct": "Number (0+)",
+            "eco_design_cert": "true/false"
         }},
         "chemical_waste": {{
-            "hazardous_reduction_pct": "Hazardous chemical reduction %",
-            "waste_recycling_pct": "Waste recycling/circular recovery % (e.g., 53%)",
-            "chemical_compliance": "AMR Alliance/REACH compliance (true/false)"
+            "hazardous_reduction_pct": "Number (0-100)",
+            "waste_recycling_pct": "Number (0-100)",
+            "chemical_compliance": "true/false"
         }},
         "circular_economy": {{
-            "takeback_program_pct": "Product take-back program %",
-            "packaging_sustainable_pct": "Deforestation-free packaging % (e.g., 86%)",
-            "certified_supplier_pct": "Sustainable suppliers % (e.g., 98% palm oil)"
+            "takeback_program_pct": "Number (0-100)",
+            "packaging_sustainable_pct": "Number (0-100)",
+            "certified_supplier_pct": "Number (0-100)"
         }},
         "sustainable_procurement": {{
-            "procurement_criteria_count": "Sustainability criteria (EcoVadis, carbon targets)",
-            "sustainable_budget_pct": "Sustainable procurement budget %",
-            "procurement_tracking": "Supplier ESG tracking (true/false)"
+            "procurement_criteria_count": "Number (0+)",
+            "sustainable_budget_pct": "Number (0-100)",
+            "procurement_tracking": "true/false"
         }},
         "life_cycle_thinking": {{
-            "lca_product_pct": "Products with LCA %",
-            "consumer_comm": "Sustainability info for consumers (true/false)",
-            "lca_improvements": "Product improvements from LCA (e.g., inhaler redesign)"
+            "lca_product_pct": "Number (0-100)",
+            "consumer_comm": "true/false",
+            "lca_improvements": "Number (0+)"
         }},
         "waste_management": {{
-            "food_waste_reduction_pct": "Food/by-product waste reduction %",
-            "segregation_rate_pct": "Waste segregation %",
-            "circular_partnerships": "Circular partnerships (e.g., WOTR water project) (true/false)"
+            "food_waste_reduction_pct": "Number (0-100)",
+            "segregation_rate_pct": "Number (0-100)",
+            "circular_partnerships": "true/false"
         }}
     }}
     
@@ -291,30 +299,32 @@ def ai_extract_esg_data():
     
     try:
         extracted_data = json.loads(response)
-        # Critical: Replace None with valid values for GSK report gaps
-        for key, value in extracted_data.items():
-            if isinstance(value, dict):  # Nested metrics (e.g., resource_efficiency)
-                for subkey, subval in value.items():
-                    if subval is None:
-                        if "pct" in subkey or "count" in subkey:
-                            extracted_data[key][subkey] = 0  # Default %/count to 0
-                        elif "cert" in subkey or "compliance" in subkey:
-                            extracted_data[key][subkey] = False  # Default booleans to False
-            elif value is None:  # Top-level fields (e.g., company_name)
-                if key == "company_name":
-                    extracted_data[key] = "GSK PLC"  # GSK's default name
-                elif key == "industry":
-                    extracted_data[key] = "Pharmaceuticals"  # GSK's industry
         
-        # Validate GSK-specific fields
-        if extracted_data.get("industry") != "Pharmaceuticals":
-            extracted_data["industry"] = "Pharmaceuticals"
+        # --- GSK-Specific Data Cleaning ---
+        # 1. Remove percentage symbols and convert to float
+        for dim in extracted_data:
+            if isinstance(extracted_data[dim], dict):
+                for metric in extracted_data[dim]:
+                    value = extracted_data[dim][metric]
+                    # Fix percentages with "%" (e.g., "83%" → 83)
+                    if isinstance(value, str) and "%" in value:
+                        extracted_data[dim][metric] = float(value.replace("%", "").strip())
+                    # Fix nulls (replace with 0 or false)
+                    if value is None:
+                        if metric in ["renewable_energy_pct", "water_reuse_pct"]:
+                            extracted_data[dim][metric] = 0  # Numeric defaults
+                        else:
+                            extracted_data[dim][metric] = False  # Boolean defaults
+        
+        # 2. Force GSK-specific values
+        extracted_data["company_name"] = "GSK PLC"
+        extracted_data["industry"] = "Pharmaceuticals"
+        
         return extracted_data
     
-    except json.JSONDecodeError:
-        st.sidebar.error(f"⚠️ Failed to parse GSK data. Raw AI response: {response[:200]}...")
+    except json.JSONDecodeError as e:
+        st.sidebar.error(f"⚠️ GSK Data Parse Error: {str(e)}. Raw response: {response[:200]}")
         return {}
-
 def ai_evaluate_unlisted_criteria(dimension):
     """Evaluate AI-only criteria (uses GSK's section text for context)"""
     data = st.session_state["production_data"]
