@@ -13,7 +13,7 @@ st.write("Upload an ESG report or enter data manually to assess your efforts.")
 OPENAI_AVAILABLE = False
 client = None
 try:
-    # Use GPT-3.5-turbo (reliable and widely available)
+    # Use GPT-4 (state-of-the-art model)
     client = OpenAI(api_key=st.secrets.get("OPENAI_API_KEY", ""))
     OPENAI_AVAILABLE = True
 except Exception as e:
@@ -36,16 +36,23 @@ if "state" not in st.session_state:
 
 # --- Core Functions ---
 def extract_pdf_text(uploaded_file):
-    """Simple PDF text extraction"""
+    """Robust PDF text extraction, with better diagnostics"""
     try:
-        with fitz.open(stream=uploaded_file.read(), filetype="pdf") as doc:
-            return "\n".join(page.get_text() for page in doc)[:100000]  # Limit for GPT-3.5
+        pdf_bytes = uploaded_file.read()
+        if not pdf_bytes or len(pdf_bytes) < 10:
+            st.error("Uploaded file is empty or too small to be a PDF.")
+            return ""
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+            text = "\n".join(page.get_text() for page in doc)[:100000]  # Limit for GPT-4
+            if not text.strip():
+                st.error("No text could be extracted from the PDF. It may be scanned or image-only.")
+            return text
     except Exception as e:
-        st.error(f"PDF error: {str(e)[:50]}")
+        st.error(f"PDF error: {str(e)[:100]}")
         return ""
 
 def ai_extract_esg(text, industry):
-    """Extract ESG data with GPT-3.5-turbo (with estimation)"""
+    """Extract ESG data with GPT-4 (with estimation)"""
     if not OPENAI_AVAILABLE:
         return None
 
@@ -71,7 +78,7 @@ def ai_extract_esg(text, industry):
 
     try:
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",  # Explicitly use GPT-3.5-turbo
+            model="gpt-4",  # Upgraded to GPT-4
             messages=[{"role": "user", "content": f"{prompt}\n\nText: {text}"}],
             temperature=0.3,
             timeout=20
@@ -126,10 +133,10 @@ elif state["step"] == "input":
     state["company"] = st.text_input("Company Name", state["company"])
     state["industry"] = st.text_input("Industry (e.g., Manufacturing)", state["industry"])
 
-    # If PDF was uploaded, try AI extraction with GPT-3.5
+    # If PDF was uploaded, try AI extraction with GPT-4
     if state["pdf_text"] and OPENAI_AVAILABLE and state["industry"]:
-        if st.button("Analyze PDF with AI (GPT-3.5)"):
-            with st.spinner("Analyzing with GPT-3.5..."):
+        if st.button("Analyze PDF with AI (GPT-4)"):
+            with st.spinner("Analyzing with GPT-4..."):
                 extracted = ai_extract_esg(state["pdf_text"], state["industry"])
                 if extracted:
                     state["data"] = extracted
@@ -180,7 +187,7 @@ elif state["step"] == "results":
             st.write("### Recommendations")
             prompt = f"Give 3 specific sustainability recommendations for a {state['industry']} company with these metrics: {state['data']}. Keep them simple."
             response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.4
             )
