@@ -665,7 +665,7 @@ def render_home_page():
     col1, col2 = st.columns([2, 2], gap="medium")
     
     with col1:
-        st.subheader("Option 1: Upload Responsible Production Report (PDF) – Recommended")
+        st.subheader("Option 1: Upload ESG or Production Report (PDF) – Recommended")
         if not PDF_AVAILABLE:
             st.info("⚠️ Install PyPDF2 first: 'pip install PyPDF2'")
         else:
@@ -707,8 +707,7 @@ def render_home_page():
                     st.rerun()
     
     with col2:
-        st.subheader("Option 2: Manual Input – For PDF Failures")
-        st.warning("⚠️ Use only if PDF upload/extraction fails (e.g., image-based PDFs).")
+        st.subheader("Option 2: Manual Input")
         company_name = st.text_input(
             "Company Name",
             value=st.session_state["eval_data"]["company_name"],
