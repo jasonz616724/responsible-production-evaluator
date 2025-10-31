@@ -249,7 +249,7 @@ except Exception as e:
 if "eval_data" not in st.session_state:
     st.session_state["eval_data"] = {
         "company_name": "",
-        "industry": "Manufacturing",  # Default to first industry in list
+        "industry": "Manufacturing",
         "third_party": {
             "penalties": False, "penalties_details": "", "positive_news": "", "policy_updates": ""
         },
@@ -284,24 +284,10 @@ if "extracted_data" not in st.session_state:
     st.session_state["extracted_data"] = {}
 
 # --- 5. Constants (Per "scoring tool.docx") ---
-# ENRICHED INDUSTRY LIST (SDG 12-relevant sectors)
 ENRICHED_INDUSTRIES = [
-    "Manufacturing",          # Original
-    "Food & Beverage",       # Original
-    "Textiles",              # Original
-    "Chemicals",             # Original
-    "Electronics",           # Original
-    "Automotive",            # New: High production waste
-    "Construction",          # New: Resource-intensive
-    "Healthcare",            # New: Medical waste focus
-    "Retail",                # New: Packaging/waste focus
-    "Agriculture",           # New: Food waste focus
-    "Logistics",             # New: Carbon/procurement focus
-    "Pharmaceuticals",       # New: Chemical waste focus
-    "Paper & Pulp",          # New: Forest resource focus
-    "Furniture",             # New: Material/recycling focus
-    "Cosmetics",             # New: Sustainable sourcing focus
-    "Other"                  # Original
+    "Manufacturing", "Food & Beverage", "Textiles", "Chemicals", "Electronics",
+    "Automotive", "Construction", "Healthcare", "Retail", "Agriculture",
+    "Logistics", "Pharmaceuticals", "Paper & Pulp", "Furniture", "Cosmetics", "Other"
 ]
 
 SDG_MAX_SCORES = {
@@ -517,11 +503,13 @@ def generate_recommendations(eval_data, target_scores, overall_score):
         recs.append(f"Increase recycled materials to ≥30% (current: {eval_data['12_2']['recycled_materials_pct'] or 'Unknown'}%)—source from {eval_data['industry']} recyclers by Q1 2025 (gains +5 points per 'scoring tool.docx').")
     return recs[:3]
 
-# --- 9. Report Generation (Per "scoring tool.docx") ---
+# --- 9. Report Generation (FIXED: Define Title Separately) ---
 def generate_report(eval_data, target_scores, overall_score, rating, recommendations):
+    # FIX: Define title first to avoid accessing report[0] during list initialization
+    title = f"Sustainability Performance Report: {eval_data['company_name']}"
     report = [
-        f"Sustainability Performance Report: {eval_data['company_name']}",
-        "=" * len(report[0]),
+        title,
+        "=" * len(title),  # Use pre-defined title for underline
         f"\nPrepared per 'scoring tool.docx' (KPMG 2024 & IFRS 2022)",
         "",
         "1. Executive Summary",
@@ -589,7 +577,7 @@ def generate_report(eval_data, target_scores, overall_score, rating, recommendat
     
     return "\n".join(report)
 
-# --- 10. UI Functions (Fixed Duplicate ID + Enriched Industries) ---
+# --- 10. UI Functions ---
 def render_front_page():
     st.title("🌱 Sustainable Production Evaluator")
     st.write("Evaluate performance per **'scoring tool.docx'** (Environmental Dimension of ESG)")
@@ -605,12 +593,11 @@ def render_front_page():
                 "Company Name (required for extraction/third-party data)",
                 value=st.session_state["eval_data"]["company_name"]
             )
-            # FIX 1: Unique key for PDF industry selectbox + Enriched list
             industry = st.selectbox(
                 "Industry",
                 ENRICHED_INDUSTRIES,
-                index=ENRICHED_INDUSTRIES.index(st.session_state["eval_data"]["industry"]),  # Use dynamic index
-                key="industry_pdf"  # Unique key to avoid duplicate ID
+                index=ENRICHED_INDUSTRIES.index(st.session_state["eval_data"]["industry"]),
+                key="industry_pdf"
             )
             uploaded_file = st.file_uploader(
                 "Upload Text-Based PDF (e.g., ESG report)",
@@ -645,12 +632,11 @@ def render_front_page():
             "Company Name",
             value=st.session_state["eval_data"]["company_name"]
         )
-        # FIX 2: Unique key for manual industry selectbox + Enriched list
         industry = st.selectbox(
             "Industry",
             ENRICHED_INDUSTRIES,
-            index=ENRICHED_INDUSTRIES.index("Manufacturing"),  # Default to first item
-            key="industry_manual"  # Unique key to avoid duplicate ID
+            index=ENRICHED_INDUSTRIES.index("Manufacturing"),
+            key="industry_manual"
         )
         
         if st.button("Start Manual Input"):
