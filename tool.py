@@ -665,7 +665,7 @@ def render_home_page():
     col1, col2 = st.columns([2, 2], gap="medium")
     
     with col1:
-        st.subheader("Option 1: Upload ESG or Production Report (PDF) – Recommended")
+        st.subheader("Option 1: Upload ESG Report")
         if not PDF_AVAILABLE:
             st.info("⚠️ Install PyPDF2 first: 'pip install PyPDF2'")
         else:
@@ -681,13 +681,13 @@ def render_home_page():
                 key="industry_pdf"
             )
             uploaded_file = st.file_uploader(
-                "Upload Text-Based PDF (e.g., Responsible Production/ESG Report)",
+                "Upload Text-Based PDF (e.g., Production/ESG Report)",
                 type="pdf",
                 accept_multiple_files=False
             )
             
             if uploaded_file and company_name and st.button("Extract Data from PDF", key="extract_pdf", use_container_width=True):
-                with st.spinner("Extracting text + retrieving third-party data..."):
+                with st.spinner("Extracting text & retrieving external data..."):
                     pdf_text = extract_full_pdf_text(uploaded_file)
                     st.session_state["pdf_extracted_text"] = pdf_text
                     
@@ -707,7 +707,7 @@ def render_home_page():
                     st.rerun()
     
     with col2:
-        st.subheader("Option 2: Manual Input")
+        st.subheader("Option 2: Manual Input Production Information")
         company_name = st.text_input(
             "Company Name",
             value=st.session_state["eval_data"]["company_name"],
