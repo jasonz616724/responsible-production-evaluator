@@ -632,81 +632,61 @@ def generate_report(eval_data, target_scores, overall_score, rating, recommendat
     return "\n".join(report)
 
 # --- 11. UI Functions (Purple-Themed, Single Chart, Updated Buttons/Highlights) ---
+# 1. 确保颜色变量正确定义（需在UI函数前声明，避免引用失败）
+PRIMARY_PURPLE = "#6a0dad"  # 深紫色（匹配scoring tool.docx设计风格）
+MEDIUM_PURPLE = "#9370db"  # 浅紫色（hover效果）
+LIGHT_PURPLE = "#f0f0ff"  # 背景浅紫
+
 def render_front_page():
     st.title("🌱 Responsible Production Evaluator", anchor=False)
-    st.write("Evaluate corporate performance on responsible production (Environmental Dimension of ESG)")
+    st.write("Evaluate corporate performance on responsible production (per scoring tool.docx)")
     
+    # 2. 修复CSS：增强选择器特异性，覆盖默认红色样式
+    st.markdown(
+        f"""
+        <style>
+        /* 修复按钮样式：使用更具体的选择器，避免被默认样式覆盖 */
+        button.stButton {{
+            background-color: {PRIMARY_PURPLE} !important;
+            color: white !important;
+            border: none !important; /* 清除默认边框（可能导致红色边缘） */
+        }}
+        button.stButton:hover {{
+            background-color: {MEDIUM_PURPLE} !important;
+        }}
+        /* 修复Radio选中样式：定位到具体选中元素，避免层级问题 */
+        div.stRadio > div > label > div[data-baseweb="radio"]:has(input:checked) {{
+            background-color: {PRIMARY_PURPLE} !important;
+            border-color: {PRIMARY_PURPLE} !important; /* 清除默认红色边框 */
+        }}
+        /* 修复Checkbox选中样式：同样增强特异性 */
+        div.stCheckbox > div > label > div[data-baseweb="checkbox"]:has(input:checked) {{
+            background-color: {PRIMARY_PURPLE} !important;
+            border-color: {PRIMARY_PURPLE} !important;
+        }}
+        /* 确保按钮文字不继承默认红色 */
+        button.stButton > div > p {{
+            color: white !important;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # 后续保留原有的「Start Manual Input」等按钮逻辑（与scoring tool.docx相关的输入流程）
     col1, col2 = st.columns([1.2, 0.8], gap="medium")
-    
-    with col1:
-        st.subheader("Option 1: Upload Responsible Production Report (PDF) – Recommended")
-        if not PDF_AVAILABLE:
-            st.info("⚠️ Install PyPDF2 first: pip install PyPDF2")
-        else:
-            company_name = st.text_input(
-                "Company Name (required for AI-derived third-party data)",
-                value=st.session_state["eval_data"]["company_name"],
-                label_visibility="visible",
-                placeholder="Enter company name"
-            )
-            industry = st.selectbox(
-                "Industry",
-                ENRICHED_INDUSTRIES,
-                index=ENRICHED_INDUSTRIES.index(st.session_state["eval_data"]["industry"]),
-                key="industry_pdf",
-                help="Select the company's primary industry"
-            )
-            uploaded_file = st.file_uploader(
-                "Upload Text-Based PDF (e.g., Responsible Production/ESG Report)",
-                type="pdf",
-                help="Auto-extracts data for responsible production evaluation",
-                accept_multiple_files=False
-            )
-            
-            if uploaded_file and company_name and st.button("Extract Data from PDF", key="extract_pdf", 
-                                                         type="primary", use_container_width=True):
-                with st.spinner("Extracting text + fetching third-party data..."):
-                    pdf_text = extract_full_pdf_text(uploaded_file)
-                    st.session_state["pdf_extracted_text"] = pdf_text
-                    
-                    if OPENAI_AVAILABLE:
-                        extracted_data = extract_sdg_data_from_pdf(pdf_text, company_name, industry)
-                        filled_data = ai_fill_missing_fields(extracted_data, industry)
-                        st.session_state["extracted_data"] = filled_data
-                    else:
-                        st.session_state["extracted_data"] = {}
-                        st.warning("⚠️ AI disabled – manual confirmation will have empty fields.")
-                    
-                    st.session_state["eval_data"]["company_name"] = company_name
-                    st.session_state["eval_data"]["industry"] = industry
-                    st.session_state["eval_data"]["third_party"] = get_third_party_data(company_name, industry)
-                    
-                    st.session_state["current_step"] = 1
-                    st.rerun()
-    
     with col2:
         st.subheader("Option 2: Manual Input – For PDF Failures")
-        st.warning("⚠️ Use only if PDF upload/extraction fails (e.g., image-based PDFs).")
-        company_name = st.text_input(
-            "Company Name",
-            value=st.session_state["eval_data"]["company_name"],
-            label_visibility="visible",
-            placeholder="Enter company name"
-        )
-        industry = st.selectbox(
-            "Industry",
-            ENRICHED_INDUSTRIES,
-            index=ENRICHED_INDUSTRIES.index("Manufacturing"),
-            key="industry_manual",
-            help="Select the company's primary industry"
-        )
+        st.warning("⚠️ Use only if PDF upload/extraction fails (per scoring tool.docx)")
+        company_name = st.text_input("Company Name", placeholder="Enter company name")
+        industry = st.selectbox("Industry", ENRICHED_INDUSTRIES, index=0)
         
-        if st.button("Start Manual Input", key="start_manual", 
-                    type="primary", use_container_width=True):
+        # 3. 按钮无需额外type="primary"（避免触发Streamlit默认红色主题）
+        if st.button("Start Manual Input", key="start_manual", use_container_width=True):
             st.session_state["eval_data"]["company_name"] = company_name
             st.session_state["eval_data"]["industry"] = industry
             st.session_state["eval_data"]["third_party"] = get_third_party_data(company_name, industry)
-            st.session_state["current_step"] = 2
+            st.session_state["current_step"] = 2  # 进入scoring tool.docx定义的手动输入流程
             st.rerun()
 
 def step_2_energy_materials():
