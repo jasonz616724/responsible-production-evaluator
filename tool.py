@@ -707,7 +707,7 @@ def render_home_page():
                     st.rerun()
     
     with col2:
-        st.subheader("Option 2: Manual Input Production Information")
+        st.subheader("Option 2: Manual Input Method")
         company_name = st.text_input(
             "Company Name",
             value=st.session_state["eval_data"]["company_name"],
