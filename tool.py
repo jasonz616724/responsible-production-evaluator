@@ -949,123 +949,111 @@ def render_report_page():
     eval_data = st.session_state["eval_data"]
     st.title("Responsible Production Performance Dashboard", anchor=False)
 
-    # --- Key Info Card (Highlighted) ---
-    rating_colors = {
-        "High Responsibility Enterprise (Low Risk)": PRIMARY_PURPLE,
-        "Compliant but Requires Improvement (Moderate Risk)": MEDIUM_PURPLE,
-        "Potential Environmental Risk (High Risk)": "#FFA500",
-        "High Ethical Risk (Severe Risk)": "#DC143C"
-    }
-    st.markdown(
-        f"""
-        <div style="background-color:{rating_colors[eval_data['rating']]}; color:white; padding:20px; border-radius:10px; margin-bottom:30px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
-        <h2 style="margin-top:0;">Overall Responsible Production Rating</h2>
-        <h3>{eval_data['rating']}</h3>
-        <h4 style="font-size:1.5em;">Total Score: {eval_data['overall_score']}/100</h4>
-        <p><strong>Industry:</strong> {eval_data['industry']}</p>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-    
-    # --- ONLY Retained Chart: Polished "Achieved vs Maximum Score" (Max as Background) ---
-    st.subheader("Responsible Production Score: Achieved vs Maximum")
-    fig, ax = plt.subplots(figsize=(12, 6))
-    
-    # Prepare data (exclude "Others" for clarity)
-    sdgs = [k for k in eval_data["target_scores"] if k != "Others"]
-    achieved_scores = [eval_data["target_scores"][k] for k in sdgs]
-    max_scores = [SDG_MAX_SCORES[k] for k in sdgs]
-    
-    # Plot MAX SCORES FIRST (as background)
-    x = range(len(sdgs))
-    width = 0.6  # Wider bars for modern look
-    ax.bar(x, max_scores, width, label="Maximum Possible Score", color="#e0e0e0", alpha=0.8, zorder=1)
-    
-    # Plot ACHIEVED SCORES on TOP
-    ax.bar(x, achieved_scores, width, label="Achieved Score", color=CHART_PURPLE, zorder=2)
-    
-    # Modern styling
-    ax.set_xlabel("SDG 12 Targets", fontsize=12, fontweight="bold")
-    ax.set_ylabel("Score", fontsize=12, fontweight="bold")
-    ax.set_title("SDG 12 Responsible Production Performance: Achieved vs Maximum Score", fontsize=14, fontweight="bold", pad=20)
-    ax.set_xticks(x)
-    ax.set_xticklabels(sdgs, fontsize=10)
-    ax.legend(loc="upper right", fontsize=10, frameon=True, fancybox=True, shadow=True)
-    
-    # Add score labels on achieved bars
-    for i, (achieved, max_val) in enumerate(zip(achieved_scores, max_scores)):
-        ax.text(i, achieved + 0.5, f"{achieved}", ha="center", va="bottom", fontsize=9, fontweight="bold", zorder=3)
-        # Optional: Add max score label (smaller, lighter)
-        ax.text(i, max_val - 1, f"Max: {max_val}", ha="center", va="top", fontsize=8, color="#666666", zorder=3)
-    
-    # Remove top/right spines for modern look
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_color("#cccccc")
-    ax.spines["bottom"].set_color("#cccccc")
-    
-    # Add light grid for readability
-    ax.yaxis.grid(True, alpha=0.3, linestyle="--")
-    ax.set_axisbelow(True)
-    
-    # Adjust y-limits for breathing room
-    ax.set_ylim(0, max(max_scores) * 1.15)
-    
-    plt.tight_layout()
-    st.pyplot(fig)
-    
-    # --- Highlighted Strengths/Weaknesses ---
-    st.subheader("Key Responsible Production Insights")
-    col1, col2 = st.columns([1, 1], gap="medium")
-    
-    with col1:
+    # --- Tabs to Organize Content ---
+    tab1, tab2, tab3 = st.tabs(["Metrics & Chart", "Detailed Report", "Insights & Recommendations"])
+
+    with tab1:
+        # --- Key Info Card (Highlighted) ---
+        rating_colors = {
+            "High Responsibility Enterprise (Low Risk)": PRIMARY_PURPLE,
+            "Compliant but Requires Improvement (Moderate Risk)": MEDIUM_PURPLE,
+            "Potential Environmental Risk (High Risk)": "#FFA500",
+            "High Ethical Risk (Severe Risk)": "#DC143C"
+        }
         st.markdown(
             f"""
-            <div style="background-color:{LIGHT_PURPLE}; padding:15px; border-radius:8px; border-left:4px solid {PRIMARY_PURPLE};">
-            <h4 style="margin-top:0; color:{PRIMARY_PURPLE};">Top Strengths</h4>
+            <div style="background-color:{rating_colors[eval_data['rating']]}; color:white; padding:20px; border-radius:10px; margin-bottom:30px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+            <h2 style="margin-top:0;">Overall Responsible Production Rating</h2>
+            <h3>{eval_data['rating']}</h3>
+            <h4 style="font-size:1.5em;">Total Score: {eval_data['overall_score']}/100</h4>
+            <p><strong>Industry:</strong> {eval_data['industry']}</p>
+            </div>
             """,
             unsafe_allow_html=True
         )
-        strengths = [k for k, v in eval_data["target_scores"].items() if k != "Others" and v >= SDG_MAX_SCORES[k] * 0.7]
-        if strengths:
-            for s in strengths:
-                st.write(f"- **SDG {s}**: {eval_data['target_scores'][s]}/{SDG_MAX_SCORES[s]} (Exceeds 70% of maximum)")
-        else:
-            st.write("- Identify initial responsible production practices to build upon (e.g., basic recycling programs)")
-        st.markdown("</div>", unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(
-            f"""
-            <div style="background-color:{LIGHT_PURPLE}; padding:15px; border-radius:8px; border-left:4px solid {MEDIUM_PURPLE};">
-            <h4 style="margin-top:0; color:{PRIMARY_PURPLE};">Critical Improvements</h4>
-            """,
-            unsafe_allow_html=True
+        
+        # --- ONLY Retained Chart: Polished "Achieved vs Maximum Score" ---
+        st.subheader("Responsible Production Score: Achieved vs Maximum")
+        fig, ax = plt.subplots(figsize=(12, 6))
+        sdgs = [k for k in eval_data["target_scores"] if k != "Others"]
+        achieved_scores = [eval_data["target_scores"].get(sdg, 0) for sdg in sdgs]
+        max_scores = [SDG_MAX_SCORES[sdg] for sdg in sdgs]
+        width = 0.6
+        ax.bar(sdgs, max_scores, width, label="Maximum Possible Score", color="#e0e0e0", alpha=0.8, zorder=1)
+        ax.bar(sdgs, achieved_scores, width, label="Achieved Score", color=CHART_PURPLE, zorder=2)
+        ax.set_xlabel("SDG 12 Targets", fontsize=12, fontweight="bold")
+        ax.set_ylabel("Score", fontsize=12, fontweight="bold")
+        ax.set_title("SDG 12 Responsible Production Performance: Achieved vs Maximum Score", fontsize=14, fontweight="bold", pad=20)
+        ax.set_xticks(range(len(sdgs)))
+        ax.set_xticklabels(sdgs, fontsize=10)
+        ax.legend(loc="upper right", fontsize=10, frameon=True, fancybox=True, shadow=True)
+        for i, (achieved, max_val) in enumerate(zip(achieved_scores, max_scores)):
+            ax.text(i, achieved + 0.5, f"{achieved}", ha="center", va="bottom", fontsize=9, fontweight="bold", zorder=3)
+            ax.text(i, max_val - 1, f"Max: {max_val}", ha="center", va="top", fontsize=8, color="#666666", zorder=3)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.yaxis.grid(True, alpha=0.3, linestyle="--")
+        ax.set_axisbelow(True)
+        ax.set_ylim(0, max(max_scores) * 1.15)
+        plt.tight_layout()
+        st.pyplot(fig)
+
+    with tab2:
+        # --- Detailed Report (Collapsible) ---
+        with st.expander("View Detailed Responsible Production Report", expanded=False):
+            st.text(st.session_state["report_text"])
+        # --- Download Button ---
+        st.download_button(
+            label="📥 Download Responsible Production Report",
+            data=st.session_state["report_text"],
+            file_name=f"{eval_data['company_name']}_Responsible_Production_Report.txt",
+            mime="text/plain",
+            use_container_width=True
         )
-        weaknesses = [k for k, v in eval_data["target_scores"].items() if k != "Others" and v < SDG_MAX_SCORES[k] * 0.5]
-        if weaknesses:
-            for w in weaknesses:
-                st.write(f"- **SDG {w}**: {eval_data['target_scores'][w]}/{SDG_MAX_SCORES[w]} (Below 50% of maximum)")
-        else:
-            st.write("- Maintain current practices and set stretch goals (e.g., increase renewable energy to 60%)")
-        st.markdown("</div>", unsafe_allow_html=True)
-    
-    # --- Report Text ---
-    st.subheader("Detailed Responsible Production Report")
-    st.text(st.session_state["report_text"])
-    
-    # --- Download Button ---
-    st.download_button(
-        label="📥 Download Responsible Production Report",
-        data=st.session_state["report_text"],
-        file_name=f"{eval_data['company_name']}_Responsible_Production_Report.txt",
-        mime="text/plain",
-        use_container_width=True
-    )
-    
-    # --- New Evaluation ---
-    if st.button("Start New Responsible Production Evaluation", key="new_eval", 
+
+    with tab3:
+        # --- Highlighted Strengths/Weaknesses ---
+        col1, col2 = st.columns(2, gap="medium")
+        with col1:
+            st.markdown(
+                f"""
+                <div style="background-color:{LIGHT_PURPLE}; padding:15px; border-radius:8px; border-left:4px solid {PRIMARY_PURPLE};">
+                <h4 style="margin-top:0; color:{PRIMARY_PURPLE};">Top Strengths</h4>
+                """,
+                unsafe_allow_html=True
+            )
+            strengths = [k for k, v in eval_data["target_scores"].items() if k != "Others" and v >= SDG_MAX_SCORES[k] * 0.7]
+            if strengths:
+                for s in strengths:
+                    st.write(f"- **SDG {s}**: {eval_data['target_scores'][s]}/{SDG_MAX_SCORES[s]} (Exceeds 70% of maximum)")
+            else:
+                st.write("- Identify initial responsible production practices to build upon (e.g., basic recycling programs)")
+            st.markdown("</div>", unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(
+                f"""
+                <div style="background-color:{LIGHT_PURPLE}; padding:15px; border-radius:8px; border-left:4px solid {MEDIUM_PURPLE};">
+                <h4 style="margin-top:0; color:{PRIMARY_PURPLE};">Critical Improvements</h4>
+                """,
+                unsafe_allow_html=True
+            )
+            weaknesses = [k for k, v in eval_data["target_scores"].items() if k != "Others" and v < SDG_MAX_SCORES[k] * 0.5]
+            if weaknesses:
+                for w in weaknesses:
+                    st.write(f"- **SDG {w}**: {eval_data['target_scores'][w]}/{SDG_MAX_SCORES[w]} (Below 50% of maximum)")
+            else:
+                st.write("- Maintain current practices and set stretch goals (e.g., increase renewable energy to 60%)")
+            st.markdown("</div>", unsafe_allow_html=True)
+        
+        # --- Actionable Recommendations (Collapsible) ---
+        with st.expander("View Actionable Responsible Production Recommendations", expanded=False):
+            recommendations = generate_recommendations(eval_data, eval_data["target_scores"], eval_data["overall_score"])
+            for rec in recommendations:
+                st.write(f"- {rec}")
+
+    # --- New Evaluation Button (Always Visible) ---
+    if st.button("Start New Responsible Production Evaluation", key="new_eval_final", 
                 type="primary", use_container_width=True):
         st.session_state.clear()
         st.session_state["eval_data"] = {
@@ -1079,7 +1067,6 @@ def render_report_page():
         }
         st.session_state["current_step"] = 0
         st.rerun()
-
 # --- 12. Main UI Flow ---
 if st.session_state["current_step"] == 0:
     render_front_page()
