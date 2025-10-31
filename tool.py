@@ -670,7 +670,7 @@ def render_home_page():
             st.info("⚠️ Install PyPDF2 first: 'pip install PyPDF2'")
         else:
             company_name = st.text_input(
-                "Company Name (required for third-party data retrieval)",
+                "Company Name (required for external data retrieval)",
                 value=st.session_state["eval_data"]["company_name"],
                 placeholder="Enter company name"
             )
