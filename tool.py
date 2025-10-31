@@ -41,7 +41,7 @@ def get_third_party_data(company_name, industry):
             "policy_updates": "No valid third-party data found"
         }
 
-# --- 2. PDF Handling (Enhanced Extraction + User Confirmation) ---
+# --- 2. PDF Handling (Per "scoring tool.docx") ---
 try:
     import PyPDF2
     PDF_AVAILABLE = True
@@ -120,7 +120,6 @@ def extract_sdg_data_from_pdf(pdf_text, company_name, industry):
         return {}
 
 def ai_fill_missing_fields(extracted_data, industry):
-    """AI fills missing fields (per "scoring tool.docx" industry norms)"""
     if not OPENAI_AVAILABLE or not extracted_data:
         return extracted_data
     
@@ -146,11 +145,9 @@ def ai_fill_missing_fields(extracted_data, industry):
         return extracted_data
 
 def render_pdf_confirmation_page(extracted_data, company_name, industry):
-    """User confirms/edits extracted data before proceeding"""
     st.subheader(f"Review & Confirm Extracted Data (Company: {company_name})")
     st.write("Edit fields as needed (based on your report). Fields marked * are auto-filled by AI (per 'scoring tool.docx').")
     
-    # Organize fields into action-based groups (no SDG mentions)
     field_groups = {
         "Energy & Water Management": [
             ("renewable_share", "Renewable energy share (%)", "number"),
@@ -185,15 +182,12 @@ def render_pdf_confirmation_page(extracted_data, company_name, industry):
         ]
     }
     
-    # Initialize confirmed data with extracted values
     confirmed_data = extracted_data.copy()
     
-    # Render each group with editable inputs
     for group_name, fields in field_groups.items():
         st.subheader(f"• {group_name}")
         col1, col2 = st.columns([1, 1], gap="small")
         for i, (field, label, field_type) in enumerate(fields):
-            # Alternate columns for readability
             with col1 if i % 2 == 0 else col2:
                 current_value = confirmed_data.get(field, None)
                 ai_filled = current_value is not None and extracted_data.get(field, None) is None
@@ -213,13 +207,10 @@ def render_pdf_confirmation_page(extracted_data, company_name, industry):
                     ) == "Yes"
                     confirmed_data[field] = new_value
     
-    # Buttons: Confirm or Re-extract
     col1_btn, col2_btn = st.columns([1, 1])
     with col1_btn:
         if st.button("Confirm Data & Proceed"):
-            # Update session state with confirmed data
             eval_data = st.session_state["eval_data"]
-            # Map confirmed data to eval_data structure
             for field in ["renewable_share", "energy_retrofit", "energy_increase", "carbon_offsets_only", "recycled_water_ratio", "ghg_disclosure", "recycled_materials_pct", "illegal_logging"]:
                 if field in confirmed_data:
                     eval_data["12_2"][field] = confirmed_data[field]
@@ -233,13 +224,12 @@ def render_pdf_confirmation_page(extracted_data, company_name, industry):
                 if field in confirmed_data:
                     eval_data["12_7"][field] = confirmed_data[field]
             st.session_state["eval_data"] = eval_data
-            # Move to final notes (no manual steps needed if data is confirmed)
             st.session_state["current_step"] = 6
             st.rerun()
     
     with col2_btn:
         if st.button("Re-Extract from PDF"):
-            st.session_state["current_step"] = 0  # Back to front page to re-upload
+            st.session_state["current_step"] = 0
             st.rerun()
 
 # --- 3. Page Config & OpenAI Client ---
@@ -259,28 +249,27 @@ except Exception as e:
 if "eval_data" not in st.session_state:
     st.session_state["eval_data"] = {
         "company_name": "",
-        "industry": "Manufacturing",
+        "industry": "Manufacturing",  # Default to first industry in list
         "third_party": {
             "penalties": False, "penalties_details": "", "positive_news": "", "policy_updates": ""
         },
-        # Action-based groups (no SDG labels)
-        "12_2": {  # Energy & Material Management
+        "12_2": {
             "renewable_share": None, "energy_retrofit": False, "energy_increase": False,
             "carbon_offsets_only": False, "recycled_water_ratio": None, "ghg_disclosure": False,
             "recycled_materials_pct": None, "illegal_logging": False
         },
-        "12_3_4": {  # Loss & Chemical/Waste Management
+        "12_3_4": {
             "loss_tracking_system": False, "loss_reduction_pct": None,
             "mrsl_zdhc_compliance": False, "regular_emission_tests": False,
             "hazardous_recovery_pct": None, "illegal_disposal": False
         },
-        "12_5_6": {  # Packaging & Reporting
+        "12_5_6": {
             "packaging_reduction_pct": None, "recycling_rate_pct": None,
             "sustainable_products_pct": None, "waste_disclosure_audit": False,
             "emission_plans": False, "annual_progress_disclosed": False, "no_goals": False,
             "high_carbon_assets_disclosed": False
         },
-        "12_7": {  # Supplier & Procurement
+        "12_7": {
             "esg_audited_suppliers_pct": None, "price_only_procurement": False,
             "supply_chain_transparency": False
         },
@@ -288,13 +277,33 @@ if "eval_data" not in st.session_state:
         "target_scores": {}, "overall_score": 0, "rating": "", "other_positive_actions": ""
     }
 if "current_step" not in st.session_state:
-    st.session_state["current_step"] = 0  # 0: Front, 1: PDF Confirmation, 2-6: Manual Steps, 7: Report
+    st.session_state["current_step"] = 0
 if "pdf_extracted_text" not in st.session_state:
     st.session_state["pdf_extracted_text"] = ""
 if "extracted_data" not in st.session_state:
     st.session_state["extracted_data"] = {}
 
 # --- 5. Constants (Per "scoring tool.docx") ---
+# ENRICHED INDUSTRY LIST (SDG 12-relevant sectors)
+ENRICHED_INDUSTRIES = [
+    "Manufacturing",          # Original
+    "Food & Beverage",       # Original
+    "Textiles",              # Original
+    "Chemicals",             # Original
+    "Electronics",           # Original
+    "Automotive",            # New: High production waste
+    "Construction",          # New: Resource-intensive
+    "Healthcare",            # New: Medical waste focus
+    "Retail",                # New: Packaging/waste focus
+    "Agriculture",           # New: Food waste focus
+    "Logistics",             # New: Carbon/procurement focus
+    "Pharmaceuticals",       # New: Chemical waste focus
+    "Paper & Pulp",          # New: Forest resource focus
+    "Furniture",             # New: Material/recycling focus
+    "Cosmetics",             # New: Sustainable sourcing focus
+    "Other"                  # Original
+]
+
 SDG_MAX_SCORES = {
     "12.2": 29, "12.3": 9, "12.4": 16, "12.5": 17, "12.6": 9, "12.7": 10, "Others": 10
 }
@@ -355,7 +364,6 @@ def get_ai_response(prompt, system_msg="You are a helpful assistant."):
         st.error(f"AI Error: {str(e)}")
         return ""
 
-# FIXED: SyntaxError – Terminated string literal correctly
 def identify_missing_fields(eval_data):
     """Identify missing data per "scoring tool.docx"""
     missing = []
@@ -392,11 +400,10 @@ def ai_other_actions(eval_data):
     response = get_ai_response(prompt, f"Sustainability consultant specializing in 'scoring tool.docx'")
     return response.strip() if response else "- Implemented employee training on sustainable production\n- Partnered with local recyclers for by-product reuse"
 
-# --- 7. Scoring Function ---
+# --- 7. Scoring Function (Per "scoring tool.docx") ---
 def calculate_scores(eval_data):
     scores = {sdg: 0 for sdg in SDG_MAX_SCORES.keys()}
     
-    # SDG 12.2
     for field, desc, points, threshold in SDG_CRITERIA["12.2"]:
         value = eval_data["12_2"][field]
         if "%" in threshold and value is not None:
@@ -409,7 +416,6 @@ def calculate_scores(eval_data):
         elif value:
             scores["12.2"] += points
     
-    # SDG 12.3
     for field, desc, points, threshold in SDG_CRITERIA["12.3"]:
         value = eval_data["12_3_4"][field]
         if "%" in threshold and value is not None:
@@ -422,7 +428,6 @@ def calculate_scores(eval_data):
         elif value:
             scores["12.3"] += points
     
-    # SDG 12.4
     for field, desc, points, threshold in SDG_CRITERIA["12.4"]:
         if field == "penalties":
             if not eval_data["third_party"]["penalties"]:
@@ -439,7 +444,6 @@ def calculate_scores(eval_data):
             elif value:
                 scores["12.4"] += points
     
-    # SDG 12.5
     for field, desc, points, threshold in SDG_CRITERIA["12.5"]:
         value = eval_data["12_5_6"][field]
         if "%" in threshold and value is not None:
@@ -452,13 +456,11 @@ def calculate_scores(eval_data):
         elif value:
             scores["12.5"] += points
     
-    # SDG 12.6
     for field, desc, points, threshold in SDG_CRITERIA["12.6"]:
         value = eval_data["12_5_6"][field]
         if value:
             scores["12.6"] += points
     
-    # SDG 12.7
     for field, desc, points, threshold in SDG_CRITERIA["12.7"]:
         value = eval_data["12_7"][field]
         if "%" in threshold and value is not None:
@@ -471,14 +473,11 @@ def calculate_scores(eval_data):
         elif value:
             scores["12.7"] += points
     
-    # "Others" Category
     scores["Others"] = min(10, len([l for l in eval_data["other_positive_actions"].split("\n") if l.strip()]) * 5)
     
-    # Apply caps/floors
     for sdg in scores:
         scores[sdg] = max(0, min(scores[sdg], SDG_MAX_SCORES[sdg]))
     
-    # Overall Rating
     overall = sum(scores.values())
     rating = "High Responsibility Enterprise (Low Risk)" if overall >=75 else \
              "Compliant but Requires Improvement (Moderate Risk)" if 60<=overall<75 else \
@@ -487,7 +486,7 @@ def calculate_scores(eval_data):
     
     return scores, overall, rating
 
-# --- 8. Recommendations ---
+# --- 8. Recommendations (Per "scoring tool.docx") ---
 def generate_recommendations(eval_data, target_scores, overall_score):
     if not OPENAI_AVAILABLE:
         return [
@@ -518,7 +517,7 @@ def generate_recommendations(eval_data, target_scores, overall_score):
         recs.append(f"Increase recycled materials to ≥30% (current: {eval_data['12_2']['recycled_materials_pct'] or 'Unknown'}%)—source from {eval_data['industry']} recyclers by Q1 2025 (gains +5 points per 'scoring tool.docx').")
     return recs[:3]
 
-# --- 9. Report Generation (Reveals SDG Links) ---
+# --- 9. Report Generation (Per "scoring tool.docx") ---
 def generate_report(eval_data, target_scores, overall_score, rating, recommendations):
     report = [
         f"Sustainability Performance Report: {eval_data['company_name']}",
@@ -542,7 +541,6 @@ def generate_report(eval_data, target_scores, overall_score, rating, recommendat
     for sdg in target_scores:
         report.append(f"- SDG {sdg}: {target_scores[sdg]}/{SDG_MAX_SCORES[sdg]}")
     
-    # Detailed Performance (Reveals SDG-action links)
     report.extend([
         "",
         "4. Detailed Performance (Tied to SDG 12 Targets)",
@@ -571,7 +569,6 @@ def generate_report(eval_data, target_scores, overall_score, rating, recommendat
         f"   - Score: {target_scores['12.7']}/{SDG_MAX_SCORES['12.7']}",
     ])
     
-    # "Others" Category
     report.extend([
         "",
         "5. Additional Positive Actions (SDG 12 Alignment)",
@@ -582,7 +579,6 @@ def generate_report(eval_data, target_scores, overall_score, rating, recommendat
     for i, rec in enumerate(recommendations, 1):
         report.append(f"   {i}. {rec}")
     
-    # Data Sources
     report.extend([
         "",
         "7. Data Sources",
@@ -593,13 +589,12 @@ def generate_report(eval_data, target_scores, overall_score, rating, recommendat
     
     return "\n".join(report)
 
-# --- 10. UI Functions (Action-Based Labels, No SDG Mentions) ---
+# --- 10. UI Functions (Fixed Duplicate ID + Enriched Industries) ---
 def render_front_page():
     st.title("🌱 Sustainable Production Evaluator")
     st.write("Evaluate performance per **'scoring tool.docx'** (Environmental Dimension of ESG)")
     
-    # Aligned columns for PDF upload (priority) and manual input
-    col1, col2 = st.columns([1.2, 0.8], gap="medium")  # PDF column wider (priority)
+    col1, col2 = st.columns([1.2, 0.8], gap="medium")
     
     with col1:
         st.subheader("Option 1: Upload ESG/Annual Report (PDF) – Recommended")
@@ -610,12 +605,12 @@ def render_front_page():
                 "Company Name (required for extraction/third-party data)",
                 value=st.session_state["eval_data"]["company_name"]
             )
+            # FIX 1: Unique key for PDF industry selectbox + Enriched list
             industry = st.selectbox(
                 "Industry",
-                ["Manufacturing", "Food & Beverage", "Textiles", "Chemicals", "Electronics", "Other"],
-                index=["Manufacturing", "Food & Beverage", "Textiles", "Chemicals", "Electronics", "Other"].index(
-                    st.session_state["eval_data"]["industry"]
-                )
+                ENRICHED_INDUSTRIES,
+                index=ENRICHED_INDUSTRIES.index(st.session_state["eval_data"]["industry"]),  # Use dynamic index
+                key="industry_pdf"  # Unique key to avoid duplicate ID
             )
             uploaded_file = st.file_uploader(
                 "Upload Text-Based PDF (e.g., ESG report)",
@@ -625,27 +620,21 @@ def render_front_page():
             
             if uploaded_file and company_name and st.button("Extract Data from PDF"):
                 with st.spinner("Extracting text + fetching third-party data..."):
-                    # Extract PDF text
                     pdf_text = extract_full_pdf_text(uploaded_file)
                     st.session_state["pdf_extracted_text"] = pdf_text
                     
-                    # Extract SDG data
                     if OPENAI_AVAILABLE:
                         extracted_data = extract_sdg_data_from_pdf(pdf_text, company_name, industry)
-                        # AI fills missing fields
                         filled_data = ai_fill_missing_fields(extracted_data, industry)
                         st.session_state["extracted_data"] = filled_data
                     else:
                         st.session_state["extracted_data"] = {}
                         st.warning("⚠️ AI disabled – manual confirmation will have empty fields.")
                     
-                    # Update company/industry in session state
                     st.session_state["eval_data"]["company_name"] = company_name
                     st.session_state["eval_data"]["industry"] = industry
-                    # Fetch third-party data
                     st.session_state["eval_data"]["third_party"] = get_third_party_data(company_name, industry)
                     
-                    # Move to confirmation page
                     st.session_state["current_step"] = 1
                     st.rerun()
     
@@ -656,21 +645,22 @@ def render_front_page():
             "Company Name",
             value=st.session_state["eval_data"]["company_name"]
         )
+        # FIX 2: Unique key for manual industry selectbox + Enriched list
         industry = st.selectbox(
             "Industry",
-            ["Manufacturing", "Food & Beverage", "Textiles", "Chemicals", "Electronics", "Other"],
-            index=0
+            ENRICHED_INDUSTRIES,
+            index=ENRICHED_INDUSTRIES.index("Manufacturing"),  # Default to first item
+            key="industry_manual"  # Unique key to avoid duplicate ID
         )
         
         if st.button("Start Manual Input"):
             st.session_state["eval_data"]["company_name"] = company_name
             st.session_state["eval_data"]["industry"] = industry
             st.session_state["eval_data"]["third_party"] = get_third_party_data(company_name, industry)
-            st.session_state["current_step"] = 2  # Manual Step 1
+            st.session_state["current_step"] = 2
             st.rerun()
 
 def step_2_energy_materials():
-    """Step 2: Energy & Material Management (no SDG label)"""
     st.subheader("Step 2/5: Energy & Material Management")
     eval_data = st.session_state["eval_data"]
     
@@ -722,7 +712,6 @@ def step_2_energy_materials():
             st.rerun()
 
 def step_3_waste_chemicals():
-    """Step 3: Waste & Chemical Management"""
     st.subheader("Step 3/5: Waste & Chemical Management")
     eval_data = st.session_state["eval_data"]
     
@@ -764,7 +753,6 @@ def step_3_waste_chemicals():
             st.rerun()
 
 def step_4_packaging_reporting():
-    """Step 4: Packaging & Reporting"""
     st.subheader("Step 4/5: Packaging & Sustainability Reporting")
     eval_data = st.session_state["eval_data"]
     
@@ -811,7 +799,6 @@ def step_4_packaging_reporting():
             st.rerun()
 
 def step_5_supplier_procurement():
-    """Step 5: Supplier & Procurement"""
     st.subheader("Step 5/5: Supplier & Procurement Practices")
     eval_data = st.session_state["eval_data"]
     
@@ -848,7 +835,6 @@ def step_5_supplier_procurement():
             st.rerun()
 
 def step_6_notes():
-    """Step 6: Additional Notes (All input methods)"""
     st.subheader("Step 6/6: Additional Sustainability Notes")
     eval_data = st.session_state["eval_data"]
     
@@ -872,7 +858,6 @@ def step_6_notes():
             st.rerun()
     
     if st.button("Back"):
-        # Return to last step (PDF confirmation or manual step 5)
         if st.session_state["extracted_data"]:
             st.session_state["current_step"] = 1
         else:
@@ -883,7 +868,6 @@ def render_report_page():
     eval_data = st.session_state["eval_data"]
     st.title(f"Sustainability Report: {eval_data['company_name']}")
     
-    # Rating Banner
     rating_colors = {
         "High Responsibility Enterprise (Low Risk)": "#4CAF50",
         "Compliant but Requires Improvement (Moderate Risk)": "#FFD700",
@@ -900,7 +884,6 @@ def render_report_page():
         unsafe_allow_html=True
     )
     
-    # Score Visualization
     st.subheader("Score Distribution (SDG 12 Targets)")
     fig, ax = plt.subplots(figsize=(10, 6))
     sdgs = list(eval_data["target_scores"].keys())
@@ -926,11 +909,9 @@ def render_report_page():
     plt.tight_layout()
     st.pyplot(fig)
     
-    # Report Text
     st.subheader("Detailed Report (per 'scoring tool.docx')")
     st.text(st.session_state["report_text"])
     
-    # Download
     st.download_button(
         label="📥 Download Report",
         data=st.session_state["report_text"],
@@ -938,7 +919,6 @@ def render_report_page():
         mime="text/plain"
     )
     
-    # New Evaluation
     if st.button("Start New Evaluation"):
         st.session_state.clear()
         st.session_state["eval_data"] = {
@@ -957,22 +937,21 @@ def render_report_page():
 if st.session_state["current_step"] == 0:
     render_front_page()
 elif st.session_state["current_step"] == 1:
-    # PDF Data Confirmation Page (priority flow)
     render_pdf_confirmation_page(
         st.session_state["extracted_data"],
         st.session_state["eval_data"]["company_name"],
         st.session_state["eval_data"]["industry"]
     )
 elif st.session_state["current_step"] == 2:
-    step_2_energy_materials()  # Manual Step 1
+    step_2_energy_materials()
 elif st.session_state["current_step"] == 3:
-    step_3_waste_chemicals()  # Manual Step 2
+    step_3_waste_chemicals()
 elif st.session_state["current_step"] == 4:
-    step_4_packaging_reporting()  # Manual Step 3
+    step_4_packaging_reporting()
 elif st.session_state["current_step"] == 5:
-    step_5_supplier_procurement()  # Manual Step 4
+    step_5_supplier_procurement()
 elif st.session_state["current_step"] == 6:
-    step_6_notes()  # Final Notes (all flows)
+    step_6_notes()
 elif st.session_state["current_step"] == 7:
     render_report_page()
 
