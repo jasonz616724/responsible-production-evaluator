@@ -662,7 +662,7 @@ def render_home_page():
         unsafe_allow_html=True
     )
 
-    col1, col2 = st.columns([1.2, 1.2], gap="medium")
+    col1, col2 = st.columns([2, 2], gap="medium")
     
     with col1:
         st.subheader("Option 1: Upload Responsible Production Report (PDF) – Recommended")
