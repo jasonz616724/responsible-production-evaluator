@@ -16,7 +16,6 @@ def get_third_party_data(company_name, industry):
             "policy_updates": "No third-party data fetched"
         }
     
-    # Prompt modified to request LINKS and AI-derived content (no hardcoded data)
     prompt = f"""For {company_name} (industry: {industry}), extract ONLY AI-derived, verifiable third-party data:
     1. Environmental penalties (2023-2024): List violations related to responsible production (e.g., illegal waste disposal). Include issuing authority, date, and DIRECT LINK to regulatory filing/news article.
     2. Positive responsible production news (2023-2024): Actions like recycling partnerships or renewable energy adoption. Include source link.
@@ -510,21 +509,18 @@ def generate_recommendations(eval_data, target_scores, overall_score):
     Format as bullet points (no introduction)."""
     
     response = get_ai_response(prompt, "Sustainability consultant specializing in industrial responsible production.")
-    # Remove numbering if AI adds it
     recs = [line.strip() for line in response.split("\n") if line.strip() and not line.strip()[0].isdigit()]
-    # Ensure 3 recommendations
     while len(recs) < 3:
         recs.append(f"Invest $300,000 in a 2MW solar panel installation at your {eval_data['industry']} facility by Q4 2025 to increase renewable energy share from current {eval_data['12_2']['renewable_share'] or '35'}% to ≥50%. Partner with SunPower or First Solar for equipment and installation, and apply for local renewable energy tax credits to offset 20% of costs. The system will generate 3.5 million kWh annually, reducing carbon emissions by 2,800 tons and lowering energy costs by $40,000 per year. Train 5 facility engineers to monitor solar output via a cloud-based dashboard, with monthly reports integrated into your production management system. This action advances responsible production by reducing reliance on fossil fuels, improves SDG 12.2 performance, and gains +7 points for meeting the renewable energy criteria.")
     return recs[:3]
 
-# --- 10. Report Generation (No "scoring tool.docx" Mentions + Highlighted Key Info) ---
+# --- 10. Report Generation ---
 def generate_report(eval_data, target_scores, overall_score, rating, recommendations):
     title = f"Responsible Production Report: {eval_data['company_name']}"
     report = [
         title,
         "=" * len(title),
         "",
-        # Key Info Highlight (Bold + Larger Implied in UI)
         "### 1. Executive Summary",
         f"**Company**: {eval_data['company_name']}",
         f"**Industry**: {eval_data['industry']}",
@@ -593,7 +589,7 @@ def generate_report(eval_data, target_scores, overall_score, rating, recommendat
     
     return "\n".join(report)
 
-# --- 11. UI Functions (Renamed + More Visuals + Card Styles) ---
+# --- 11. UI Functions (Only "Achieved vs Maximum Score" Chart, Polished) ---
 def render_front_page():
     st.title("🌱 Responsible Production Evaluator")
     st.write("Evaluate corporate performance on responsible production (Environmental Dimension of ESG)")
@@ -889,52 +885,49 @@ def render_report_page():
         unsafe_allow_html=True
     )
     
-    # --- Added Visual Charts ---
-    st.subheader("Responsible Production Score Visualization")
-    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(14, 10))
-    fig.suptitle("Responsible Production Performance Metrics", fontsize=16)
+    # --- ONLY Retained Chart: Polished "Achieved vs Maximum Score" (Max as Background) ---
+    st.subheader("Responsible Production Score: Achieved vs Maximum")
+    fig, ax = plt.subplots(figsize=(12, 6))
     
-    # 1. Pie Chart: Score Distribution Across SDG Targets
+    # Prepare data (exclude "Others" for clarity)
     sdgs = [k for k in eval_data["target_scores"] if k != "Others"]
-    scores = [eval_data["target_scores"][k] for k in sdgs]
-    colors = ["#2196F3", "#4CAF50", "#FFC107", "#FF9800", "#9C27B0", "#E91E63", "#607D8B"]
-    ax1.pie(scores, labels=sdgs, colors=colors[:len(sdgs)], autopct="%1.1f%%", startangle=90)
-    ax1.set_title("Score Contribution by SDG Target")
-    
-    # 2. Bar Chart: Achieved vs. Maximum Score (SDG Targets)
+    achieved_scores = [eval_data["target_scores"][k] for k in sdgs]
     max_scores = [SDG_MAX_SCORES[k] for k in sdgs]
+    
+    # Plot MAX SCORES FIRST (as background)
     x = range(len(sdgs))
-    width = 0.35
-    bars1 = ax2.bar([i-width/2 for i in x], scores, width, label="Achieved", color="#2196F3")
-    bars2 = ax2.bar([i+width/2 for i in x], max_scores, width, label="Maximum", color="#f0f0f0", alpha=0.7)
-    ax2.set_xlabel("SDG 12 Targets")
-    ax2.set_ylabel("Score")
-    ax2.set_title("Achieved vs. Maximum Score")
-    ax2.set_xticks(x)
-    ax2.set_xticklabels(sdgs)
-    ax2.legend()
-    for bar in bars1:
-        height = bar.get_height()
-        ax2.text(bar.get_x()+bar.get_width()/2., height+0.1, f"{height}", ha="center", va="bottom")
+    width = 0.6  # Wider bars for modern look
+    ax.bar(x, max_scores, width, label="Maximum Possible Score", color="#e0e0e0", alpha=0.8, zorder=1)
     
-    # 3. Horizontal Bar Chart: Top 3 Improvement Areas (Lowest Scores)
-    low_scores = {k: v for k, v in eval_data["target_scores"].items() if k != "Others"}
-    sorted_low = dict(sorted(low_scores.items(), key=lambda item: item[1])[:3])
-    ax3.barh(list(sorted_low.keys()), list(sorted_low.values()), color="#FF9800")
-    ax3.set_xlabel("Score")
-    ax3.set_title("Top 3 Improvement Areas (Lowest Scores)")
-    for i, v in enumerate(sorted_low.values()):
-        ax3.text(v + 0.2, i, str(v), va="center")
+    # Plot ACHIEVED SCORES on TOP
+    ax.bar(x, achieved_scores, width, label="Achieved Score", color="#2196F3", zorder=2)
     
-    # 4. Line Chart: Score Trend (Mock for Illustration)
-    quarters = ["Q1 2023", "Q2 2023", "Q3 2023", "Q4 2023", "Q1 2024"]
-    mock_scores = [eval_data["overall_score"] - 15, eval_data["overall_score"] - 10, eval_data["overall_score"] - 5, eval_data["overall_score"] - 2, eval_data["overall_score"]]
-    ax4.plot(quarters, mock_scores, marker="o", linewidth=2, color="#4CAF50")
-    ax4.set_xlabel("Quarter")
-    ax4.set_ylabel("Overall Score")
-    ax4.set_title("Mock Responsible Production Score Trend (2023-2024)")
-    ax4.grid(True, alpha=0.3)
-    plt.xticks(rotation=45)
+    # Modern styling
+    ax.set_xlabel("SDG 12 Targets", fontsize=12, fontweight="bold")
+    ax.set_ylabel("Score", fontsize=12, fontweight="bold")
+    ax.set_title("SDG 12 Responsible Production Performance: Achieved vs Maximum Score", fontsize=14, fontweight="bold", pad=20)
+    ax.set_xticks(x)
+    ax.set_xticklabels(sdgs, fontsize=10)
+    ax.legend(loc="upper right", fontsize=10, frameon=True, fancybox=True, shadow=True)
+    
+    # Add score labels on achieved bars
+    for i, (achieved, max_val) in enumerate(zip(achieved_scores, max_scores)):
+        ax.text(i, achieved + 0.5, f"{achieved}", ha="center", va="bottom", fontsize=9, fontweight="bold", zorder=3)
+        # Optional: Add max score label (smaller, lighter)
+        ax.text(i, max_val - 1, f"Max: {max_val}", ha="center", va="top", fontsize=8, color="#666666", zorder=3)
+    
+    # Remove top/right spines for modern look
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("#cccccc")
+    ax.spines["bottom"].set_color("#cccccc")
+    
+    # Add light grid for readability
+    ax.yaxis.grid(True, alpha=0.3, linestyle="--")
+    ax.set_axisbelow(True)
+    
+    # Adjust y-limits for breathing room
+    ax.set_ylim(0, max(max_scores) * 1.15)
     
     plt.tight_layout()
     st.pyplot(fig)
