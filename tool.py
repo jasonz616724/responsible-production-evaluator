@@ -930,7 +930,7 @@ def step_5_supplier_procurement():
 
 def step_6_additional_notes():
     """Step 6: Additional Notes (final input step)."""
-    st.subheader("Step 6/6: Additional Notes", anchor=False)
+    st.subheader("Additional Notes", anchor=False)
     eval_data = st.session_state["eval_data"]
     
     eval_data["additional_notes"] = st.text_area(
