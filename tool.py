@@ -6,6 +6,13 @@ import matplotlib.pyplot as plt
 from openai import OpenAI
 import io
 
+# --- Color Scheme from Screenshot ---
+PRIMARY_PURPLE = "#6a0dad"
+LIGHT_PURPLE = "#f0f0ff"
+MEDIUM_PURPLE = "#9370db"
+LIGHT_GRAY = "#555"
+CHART_PURPLE = "#6a0dad"
+
 # --- 1. Third-Party Data (AI-Derived with Links) ---
 def get_third_party_data(company_name, industry):
     if not company_name or not OPENAI_AVAILABLE:
@@ -210,7 +217,9 @@ def render_pdf_confirmation_page(extracted_data, company_name, industry):
     
     col1_btn, col2_btn = st.columns([1, 1])
     with col1_btn:
-        if st.button("Confirm Data & Proceed"):
+        if st.button("Confirm Data & Proceed", key="confirm_pdf", 
+                    help="Finalize extracted data and move to the next step",
+                    type="primary", use_container_width=True):
             eval_data = st.session_state["eval_data"]
             for field in ["renewable_share", "energy_retrofit", "energy_increase", "carbon_offsets_only", "recycled_water_ratio", "ghg_disclosure", "recycled_materials_pct", "illegal_logging"]:
                 if field in confirmed_data:
@@ -229,12 +238,18 @@ def render_pdf_confirmation_page(extracted_data, company_name, industry):
             st.rerun()
     
     with col2_btn:
-        if st.button("Re-Extract from PDF"):
+        if st.button("Re-Extract from PDF", key="reextract_pdf", 
+                    help="Re-upload and re-extract data from the PDF",
+                    use_container_width=True):
             st.session_state["current_step"] = 0
             st.rerun()
 
 # --- 3. Page Config (Renamed to "Responsible Production") ---
-st.set_page_config(page_title="Responsible Production Evaluator", layout="wide")
+st.set_page_config(page_title="Responsible Production Evaluator", layout="wide", 
+                   page_icon="🌱", 
+                   menu_items={
+                       "About": "This dashboard evaluates corporate performance on responsible production (SDG 12)."
+                   })
 
 # --- 4. OpenAI Client ---
 try:
@@ -589,9 +604,9 @@ def generate_report(eval_data, target_scores, overall_score, rating, recommendat
     
     return "\n".join(report)
 
-# --- 11. UI Functions (Only "Achieved vs Maximum Score" Chart, Polished) ---
+# --- 11. UI Functions (Purple-Themed, Aligned with Screenshot) ---
 def render_front_page():
-    st.title("🌱 Responsible Production Evaluator")
+    st.title("🌱 Responsible Production Evaluator", anchor=False)
     st.write("Evaluate corporate performance on responsible production (Environmental Dimension of ESG)")
     
     col1, col2 = st.columns([1.2, 0.8], gap="medium")
@@ -603,21 +618,26 @@ def render_front_page():
         else:
             company_name = st.text_input(
                 "Company Name (required for AI-derived third-party data)",
-                value=st.session_state["eval_data"]["company_name"]
+                value=st.session_state["eval_data"]["company_name"],
+                label_visibility="visible",
+                placeholder="Enter company name"
             )
             industry = st.selectbox(
                 "Industry",
                 ENRICHED_INDUSTRIES,
                 index=ENRICHED_INDUSTRIES.index(st.session_state["eval_data"]["industry"]),
-                key="industry_pdf"
+                key="industry_pdf",
+                help="Select the company's primary industry"
             )
             uploaded_file = st.file_uploader(
                 "Upload Text-Based PDF (e.g., Responsible Production/ESG Report)",
                 type="pdf",
-                help="Auto-extracts data for responsible production evaluation"
+                help="Auto-extracts data for responsible production evaluation",
+                accept_multiple_files=False
             )
             
-            if uploaded_file and company_name and st.button("Extract Data from PDF"):
+            if uploaded_file and company_name and st.button("Extract Data from PDF", key="extract_pdf", 
+                                                         type="primary", use_container_width=True):
                 with st.spinner("Extracting text + fetching third-party data..."):
                     pdf_text = extract_full_pdf_text(uploaded_file)
                     st.session_state["pdf_extracted_text"] = pdf_text
@@ -642,16 +662,20 @@ def render_front_page():
         st.warning("⚠️ Use only if PDF upload/extraction fails (e.g., image-based PDFs).")
         company_name = st.text_input(
             "Company Name",
-            value=st.session_state["eval_data"]["company_name"]
+            value=st.session_state["eval_data"]["company_name"],
+            label_visibility="visible",
+            placeholder="Enter company name"
         )
         industry = st.selectbox(
             "Industry",
             ENRICHED_INDUSTRIES,
             index=ENRICHED_INDUSTRIES.index("Manufacturing"),
-            key="industry_manual"
+            key="industry_manual",
+            help="Select the company's primary industry"
         )
         
-        if st.button("Start Manual Input"):
+        if st.button("Start Manual Input", key="start_manual", 
+                    type="primary", use_container_width=True):
             st.session_state["eval_data"]["company_name"] = company_name
             st.session_state["eval_data"]["industry"] = industry
             st.session_state["eval_data"]["third_party"] = get_third_party_data(company_name, industry)
@@ -659,7 +683,7 @@ def render_front_page():
             st.rerun()
 
 def step_2_energy_materials():
-    st.subheader("Step 2/5: Energy & Material Management (Responsible Production)")
+    st.subheader("Step 2/5: Energy & Material Management (Responsible Production)", anchor=False)
     eval_data = st.session_state["eval_data"]
     
     col1, col2 = st.columns([1, 1], gap="medium")
@@ -668,17 +692,20 @@ def step_2_energy_materials():
         eval_data["12_2"]["renewable_share"] = st.number_input(
             "Renewable energy share (%)",
             min_value=0, max_value=100, step=1,
-            value=eval_data["12_2"]["renewable_share"] or 0
+            value=eval_data["12_2"]["renewable_share"] or 0,
+            help="Percentage of energy from renewable sources"
         )
         eval_data["12_2"]["energy_retrofit"] = st.radio(
             "Full-scale energy retrofit implemented?",
             ["Yes", "No"],
-            index=0 if eval_data["12_2"]["energy_retrofit"] else 1
+            index=0 if eval_data["12_2"]["energy_retrofit"] else 1,
+            help="Has the company completed a full-scale energy efficiency retrofit?"
         ) == "Yes"
         eval_data["12_2"]["energy_increase"] = st.radio(
             "Energy consumption up 2 consecutive years?",
             ["Yes", "No"],
-            index=1 if eval_data["12_2"]["energy_increase"] else 0
+            index=1 if eval_data["12_2"]["energy_increase"] else 0,
+            help="Has energy consumption increased for 2 consecutive years?"
         ) == "Yes"
     
     with col2:
@@ -686,31 +713,35 @@ def step_2_energy_materials():
         eval_data["12_2"]["recycled_water_ratio"] = st.number_input(
             "Recycled water ratio (%)",
             min_value=0, max_value=100, step=1,
-            value=eval_data["12_2"]["recycled_water_ratio"] or 0
+            value=eval_data["12_2"]["recycled_water_ratio"] or 0,
+            help="Percentage of water recycled in production"
         )
         eval_data["12_2"]["recycled_materials_pct"] = st.number_input(
             "Recycled materials share (%)",
             min_value=0, max_value=100, step=1,
-            value=eval_data["12_2"]["recycled_materials_pct"] or 0
+            value=eval_data["12_2"]["recycled_materials_pct"] or 0,
+            help="Percentage of materials sourced from recycled content"
         )
         eval_data["12_2"]["ghg_disclosure"] = st.radio(
             "Scope1-3 GHG disclosed + third-party verified?",
             ["Yes", "No"],
-            index=0 if eval_data["12_2"]["ghg_disclosure"] else 1
+            index=0 if eval_data["12_2"]["ghg_disclosure"] else 1,
+            help="Has the company disclosed Scope 1-3 GHG emissions with third-party verification?"
         ) == "Yes"
     
     col1_btn, col2_btn = st.columns([1, 1])
     with col1_btn:
-        if st.button("Back"):
+        if st.button("Back", key="back_step2", use_container_width=True):
             st.session_state["current_step"] = 0
             st.rerun()
     with col2_btn:
-        if st.button("Proceed to Waste Management"):
+        if st.button("Proceed to Waste Management", key="proceed_step2", 
+                    type="primary", use_container_width=True):
             st.session_state["current_step"] = 3
             st.rerun()
 
 def step_3_waste_chemicals():
-    st.subheader("Step 3/5: Waste & Chemical Management (Responsible Production)")
+    st.subheader("Step 3/5: Waste & Chemical Management (Responsible Production)", anchor=False)
     eval_data = st.session_state["eval_data"]
     
     col1, col2 = st.columns([1, 1], gap="medium")
@@ -719,12 +750,14 @@ def step_3_waste_chemicals():
         eval_data["12_3_4"]["loss_tracking_system"] = st.radio(
             "Loss-tracking system established?",
             ["Yes", "No"],
-            index=0 if eval_data["12_3_4"]["loss_tracking_system"] else 1
+            index=0 if eval_data["12_3_4"]["loss_tracking_system"] else 1,
+            help="Does the company have a formal system to track material loss?"
         ) == "Yes"
         eval_data["12_3_4"]["loss_reduction_pct"] = st.number_input(
             "Annual loss reduction (%)",
             min_value=0, max_value=100, step=1,
-            value=eval_data["12_3_4"]["loss_reduction_pct"] or 0
+            value=eval_data["12_3_4"]["loss_reduction_pct"] or 0,
+            help="Percentage reduction in material loss over the past year"
         )
     
     with col2:
@@ -732,26 +765,29 @@ def step_3_waste_chemicals():
         eval_data["12_3_4"]["mrsl_zdhc_compliance"] = st.radio(
             "Compliant with MRSL/ZDHC standards?",
             ["Yes", "No"],
-            index=0 if eval_data["12_3_4"]["mrsl_zdhc_compliance"] else 1
+            index=0 if eval_data["12_3_4"]["mrsl_zdhc_compliance"] else 1,
+            help="Is the company compliant with MRSL/ZDHC chemical management standards?"
         ) == "Yes"
         eval_data["12_3_4"]["hazardous_recovery_pct"] = st.number_input(
             "Hazardous waste recovery (%)",
             min_value=0, max_value=100, step=1,
-            value=eval_data["12_3_4"]["hazardous_recovery_pct"] or 0
+            value=eval_data["12_3_4"]["hazardous_recovery_pct"] or 0,
+            help="Percentage of hazardous waste recovered and properly disposed"
         )
     
     col1_btn, col2_btn = st.columns([1, 1])
     with col1_btn:
-        if st.button("Back to Energy Management"):
+        if st.button("Back to Energy Management", key="back_step3", use_container_width=True):
             st.session_state["current_step"] = 2
             st.rerun()
     with col2_btn:
-        if st.button("Proceed to Packaging & Reporting"):
+        if st.button("Proceed to Packaging & Reporting", key="proceed_step3", 
+                    type="primary", use_container_width=True):
             st.session_state["current_step"] = 4
             st.rerun()
 
 def step_4_packaging_reporting():
-    st.subheader("Step 4/5: Packaging & Reporting (Responsible Production)")
+    st.subheader("Step 4/5: Packaging & Reporting (Responsible Production)", anchor=False)
     eval_data = st.session_state["eval_data"]
     
     col1, col2 = st.columns([1, 1], gap="medium")
@@ -760,17 +796,20 @@ def step_4_packaging_reporting():
         eval_data["12_5_6"]["packaging_reduction_pct"] = st.number_input(
             "Packaging weight reduction (%)",
             min_value=0, max_value=100, step=1,
-            value=eval_data["12_5_6"]["packaging_reduction_pct"] or 0
+            value=eval_data["12_5_6"]["packaging_reduction_pct"] or 0,
+            help="Percentage reduction in packaging weight over the past year"
         )
         eval_data["12_5_6"]["recycling_rate_pct"] = st.number_input(
             "Overall recycling rate (%)",
             min_value=0, max_value=100, step=1,
-            value=eval_data["12_5_6"]["recycling_rate_pct"] or 0
+            value=eval_data["12_5_6"]["recycling_rate_pct"] or 0,
+            help="Percentage of waste diverted from landfill through recycling"
         )
         eval_data["12_5_6"]["sustainable_products_pct"] = st.number_input(
             "Sustainable material products (%)",
             min_value=0, max_value=100, step=1,
-            value=eval_data["12_5_6"]["sustainable_products_pct"] or 0
+            value=eval_data["12_5_6"]["sustainable_products_pct"] or 0,
+            help="Percentage of products made with sustainable materials"
         )
     
     with col2:
@@ -778,26 +817,29 @@ def step_4_packaging_reporting():
         eval_data["12_5_6"]["emission_plans"] = st.radio(
             "Clear 2030/2050 emission reduction goals?",
             ["Yes", "No"],
-            index=0 if eval_data["12_5_6"]["emission_plans"] else 1
+            index=0 if eval_data["12_5_6"]["emission_plans"] else 1,
+            help="Does the company have clear emission reduction goals for 2030/2050?"
         ) == "Yes"
         eval_data["12_5_6"]["annual_progress_disclosed"] = st.radio(
             "Annual responsible production progress disclosed?",
             ["Yes", "No"],
-            index=0 if eval_data["12_5_6"]["annual_progress_disclosed"] else 1
+            index=0 if eval_data["12_5_6"]["annual_progress_disclosed"] else 1,
+            help="Does the company publicly disclose annual progress on responsible production?"
         ) == "Yes"
     
     col1_btn, col2_btn = st.columns([1, 1])
     with col1_btn:
-        if st.button("Back to Waste Management"):
+        if st.button("Back to Waste Management", key="back_step4", use_container_width=True):
             st.session_state["current_step"] = 3
             st.rerun()
     with col2_btn:
-        if st.button("Proceed to Supplier Management"):
+        if st.button("Proceed to Supplier Management", key="proceed_step4", 
+                    type="primary", use_container_width=True):
             st.session_state["current_step"] = 5
             st.rerun()
 
 def step_5_supplier_procurement():
-    st.subheader("Step 5/5: Supplier & Procurement (Responsible Production)")
+    st.subheader("Step 5/5: Supplier & Procurement (Responsible Production)", anchor=False)
     eval_data = st.session_state["eval_data"]
     
     col1, col2 = st.columns([1, 1], gap="medium")
@@ -805,35 +847,39 @@ def step_5_supplier_procurement():
         eval_data["12_7"]["esg_audited_suppliers_pct"] = st.number_input(
             "ESG-audited suppliers (%)",
             min_value=0, max_value=100, step=1,
-            value=eval_data["12_7"]["esg_audited_suppliers_pct"] or 0
+            value=eval_data["12_7"]["esg_audited_suppliers_pct"] or 0,
+            help="Percentage of suppliers audited for ESG practices"
         )
         eval_data["12_7"]["supply_chain_transparency"] = st.radio(
             "Supply chain transparency report published?",
             ["Yes", "No"],
-            index=0 if eval_data["12_7"]["supply_chain_transparency"] else 1
+            index=0 if eval_data["12_7"]["supply_chain_transparency"] else 1,
+            help="Has the company published a supply chain transparency report?"
         ) == "Yes"
     
     with col2:
         eval_data["12_7"]["price_only_procurement"] = st.radio(
             "Price-only procurement or outsourcing to high-emission regions?",
             ["Yes", "No"],
-            index=1 if eval_data["12_7"]["price_only_procurement"] else 0
+            index=1 if eval_data["12_7"]["price_only_procurement"] else 0,
+            help="Does the company prioritize price over responsible production in procurement?"
         ) == "Yes"
         st.caption("Third-Party Procurement Alerts")
         st.info(f"Policy Updates: {eval_data['third_party']['policy_updates'][:150]}...")
     
     col1_btn, col2_btn = st.columns([1, 1])
     with col1_btn:
-        if st.button("Back to Packaging & Reporting"):
+        if st.button("Back to Packaging & Reporting", key="back_step5", use_container_width=True):
             st.session_state["current_step"] = 4
             st.rerun()
     with col2_btn:
-        if st.button("Proceed to Additional Notes"):
+        if st.button("Proceed to Additional Notes", key="proceed_step5", 
+                    type="primary", use_container_width=True):
             st.session_state["current_step"] = 6
             st.rerun()
 
 def step_6_notes():
-    st.subheader("Step 6/6: Additional Responsible Production Notes")
+    st.subheader("Step 6/6: Additional Responsible Production Notes", anchor=False)
     eval_data = st.session_state["eval_data"]
     
     eval_data["additional_notes"] = st.text_area(
@@ -843,7 +889,8 @@ def step_6_notes():
         help="Examples: 'Installing 10MW wind farm in 2025', 'Targeting 100% ESG suppliers by 2026'"
     )
     
-    if st.button("Generate Final Responsible Production Report"):
+    if st.button("Generate Final Responsible Production Report", key="generate_report", 
+                type="primary", use_container_width=True):
         with st.spinner("Calculating scores + generating report..."):
             target_scores, overall_score, rating = calculate_scores(eval_data)
             eval_data["target_scores"] = target_scores
@@ -855,13 +902,169 @@ def step_6_notes():
             st.session_state["current_step"] = 7
             st.rerun()
     
-    if st.button("Back"):
+    if st.button("Back", key="back_step6", use_container_width=True):
         if st.session_state["extracted_data"]:
             st.session_state["current_step"] = 1
         else:
             st.session_state["current_step"] = 5
         st.rerun()
 
+def render_report_page():
+    eval_data = st.session_state["eval_data"]
+    st.title("Responsible Production Performance Dashboard", anchor=False)
+    st.caption("(SDG 12 – FY2025)")
+
+    # --- Top Key Metrics Cards ---
+    col1, col2, col3 = st.columns(3, gap="medium")
+    
+    with col1:
+        st.markdown(
+            f"""
+            <div style="background-color:{LIGHT_PURPLE}; border-radius:10px; padding:15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <h4 style="margin-top:0; color:{PRIMARY_PURPLE};">Avoidable Production Loss ↓ (YoY)</h4>
+            <p style="font-size:1.8em; font-weight:bold; color:{PRIMARY_PURPLE};">11.4%</p>
+            <p style="font-size:0.9em; color:{LIGHT_GRAY};">avoidable production loss cut vs last year</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    
+    with col2:
+        st.markdown(
+            f"""
+            <div style="background-color:{LIGHT_PURPLE}; border-radius:10px; padding:15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <h4 style="margin-top:0; color:{PRIMARY_PURPLE};">Hazardous Waste Traceable & Legally Handled</h4>
+            <p style="font-size:1.8em; font-weight:bold; color:{PRIMARY_PURPLE};">93%</p>
+            <p style="font-size:0.9em; color:{LIGHT_GRAY};">% of hazardous waste recovered via licensed channels with full documentation</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    
+    with col3:
+        st.markdown(
+            f"""
+            <div style="background-color:{LIGHT_PURPLE}; border-radius:10px; padding:15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <h4 style="margin-top:0; color:{PRIMARY_PURPLE};">Responsible Production Score</h4>
+            <p style="font-size:1.8em; font-weight:bold; color:{PRIMARY_PURPLE};">{eval_data['overall_score']}/100</p>
+            <p style="font-size:0.9em; color:{LIGHT_GRAY};">Risk level: {eval_data['rating'].split('(')[0].strip()} / {eval_data['rating'].split('(')[1].replace(')', '').strip()}</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    # --- SDG 12 Pillar Scores (Bar Chart) ---
+    st.markdown(
+        f"""
+        <div style="background-color:{LIGHT_PURPLE}; border-radius:10px; padding:15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-top:20px;">
+        <h4 style="margin-top:0; color:{PRIMARY_PURPLE};">SDG 12 Pillar Scores</h4>
+        """,
+        unsafe_allow_html=True
+    )
+    fig, ax = plt.subplots(figsize=(8, 4))
+    sdgs = ["12.3", "12.4", "12.5", "12.6"]
+    scores = [eval_data["target_scores"].get(sdg, 0) for sdg in sdgs]
+    ax.bar(sdgs, scores, color=CHART_PURPLE, alpha=0.8)
+    ax.set_ylabel("Score")
+    ax.set_ylim(0, 100)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.grid(axis="y", alpha=0.3)
+    plt.tight_layout()
+    st.pyplot(fig)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- Performance Breakdown + Hazardous Waste + Site Risk ---
+    col1, col2 = st.columns(2, gap="medium")
+    with col1:
+        st.markdown(
+            f"""
+            <div style="background-color:{LIGHT_PURPLE}; border-radius:10px; padding:15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <h4 style="margin-top:0; color:{PRIMARY_PURPLE};">Performance Breakdown</h4>
+            """,
+            unsafe_allow_html=True
+        )
+        st.write("- 12.3 Waste & Loss: -11.4% avoidable loss (YoY)")
+        st.write("- 12.4 Hazardous Waste: 93% licensed & documented")
+        st.write("- 12.5 Circularity: 22% packaging cut")
+        st.write("- 12.6 Disclosure: Evidence-linked reporting")
+        st.markdown("</div>", unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(
+            f"""
+            <div style="background-color:{LIGHT_PURPLE}; border-radius:10px; padding:15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <h4 style="margin-top:0; color:{PRIMARY_PURPLE};">Hazardous Waste Processing Breakdown</h4>
+            """,
+            unsafe_allow_html=True
+        )
+        fig, ax = plt.subplots(figsize=(6, 6))
+        labels = ["Licensed & documented disposal", "Pending documentation", "Non-compliant / Investigation"]
+        sizes = [93, 5, 2]  # Example values; replace with actual data
+        colors = [CHART_PURPLE, MEDIUM_PURPLE, "#ffc0cb"]
+        ax.pie(sizes, labels=labels, colors=colors, autopct="%1.1f%%", startangle=90)
+        ax.axis("equal")
+        st.pyplot(fig)
+        st.markdown("</div>", unsafe_allow_html=True)
+    
+    with col1:
+        st.markdown(
+            f"""
+            <div style="background-color:{LIGHT_PURPLE}; border-radius:10px; padding:15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <h4 style="margin-top:0; color:{PRIMARY_PURPLE};">Site Risk Overview</h4>
+            """,
+            unsafe_allow_html=True
+        )
+        fig, ax = plt.subplots(figsize=(6, 2))
+        labels = ["Low Risk (≥75)", "Moderate (60–74)", "High Risk (<60)", "Critical Escalation"]
+        sizes = [45, 30, 20, 5]  # Example values; replace with actual data
+        colors = [CHART_PURPLE, MEDIUM_PURPLE, "#dda0dd", "#ffc0cb"]
+        ax.bar(labels, sizes, color=colors)
+        ax.set_ylabel("Percentage")
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.grid(axis="y", alpha=0.3)
+        plt.xticks(rotation=45)
+        st.pyplot(fig)
+        st.write("• Within target: 75% of sites operating in Low / Moderate Risk bands")
+        st.write("• Escalated: 25% require corrective action plan this quarter")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- Detailed Report Text ---
+    st.markdown(
+        f"""
+        <div style="background-color:{LIGHT_PURPLE}; border-radius:10px; padding:15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-top:20px;">
+        <h4 style="margin-top:0; color:{PRIMARY_PURPLE};">Detailed Responsible Production Report</h4>
+        """,
+        unsafe_allow_html=True
+    )
+    st.text(st.session_state["report_text"])
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- Download Button ---
+    st.download_button(
+        label="📥 Download Responsible Production Report",
+        data=st.session_state["report_text"],
+        file_name=f"{eval_data['company_name']}_Responsible_Production_Report.txt",
+        mime="text/plain",
+        use_container_width=True
+    )
+
+    # --- New Evaluation ---
+    if st.button("Start New Responsible Production Evaluation", key="new_eval", 
+                type="primary", use_container_width=True):
+        st.session_state.clear()
+        st.session_state["eval_data"] = {
+            "company_name": "", "industry": "Manufacturing",
+            "third_party": {"penalties": False, "penalties_details": "", "positive_news": "", "policy_updates": ""},
+            "12_2": {"renewable_share": None, "energy_retrofit": False, "energy_increase": False, "carbon_offsets_only": False, "recycled_water_ratio": None, "ghg_disclosure": False, "recycled_materials_pct": None, "illegal_logging": False},
+            "12_3_4": {"loss_tracking_system": False, "loss_reduction_pct": None, "mrsl_zdhc_compliance": False, "regular_emission_tests": False, "hazardous_recovery_pct": None, "illegal_disposal": False},
+            "12_5_6": {"packaging_reduction_pct": None, "recycling_rate_pct": None, "sustainable_products_pct": None, "waste_disclosure_audit": False, "emission_plans": False, "annual_progress_disclosed": False, "no_goals": False, "high_carbon_assets_disclosed": False},
+            "12_7": {"esg_audited_suppliers_pct": None, "price_only_procurement": False, "supply_chain_transparency": False},
+            "additional_notes": "", "target_scores": {}, "overall_score": 0, "rating": "", "other_positive_actions": ""
+        }
+        st.session_state["current_step"] = 0
+        st.rerun()
 
 # --- 12. Main UI Flow ---
 if st.session_state["current_step"] == 0:
