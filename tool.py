@@ -627,7 +627,7 @@ def generate_evaluation_report(eval_data, target_scores, overall_score, rating, 
 # --- UI Functions (Purple Theme, No File Name Mentions)
 def render_home_page():
     """Home page (PDF upload + manual input options)."""
-    st.title("🌱 Responsible Production Evaluation Tool", anchor=False)
+    st.title("🌱 Responsible Production Evaluation", anchor=False)
     st.write("Evaluate corporate performance on responsible production (Environmental Dimension of ESG)")
     
     # Fix purple UI styling (override default red)
