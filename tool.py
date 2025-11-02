@@ -278,26 +278,26 @@ if "eval_data" not in st.session_state:
         "company_name": "",
         "industry": "Manufacturing",
         "third_party": {"penalties": False, "penalties_details": "", "positive_news": "", "policy_updates": ""},
-        # Metric group 1: Energy & Resource Management
+        # Metric Group 1: Energy & Resource Management
         "12_2": {
             "renewable_share": None, "energy_retrofit": False, "energy_increase": False,
             "carbon_offsets_only": False, "recycled_water_ratio": None, "ghg_disclosure": False,
             "recycled_materials_pct": None, "illegal_logging": False
         },
-        # Metric group 2: Loss & Waste Management
+        # Metric Group 2: Loss & Waste Management
         "12_3_4": {
             "loss_tracking_system": False, "loss_reduction_pct": None,
             "mrsl_zdhc_compliance": False, "regular_emission_tests": False,
             "hazardous_recovery_pct": None, "illegal_disposal": False
         },
-        # Metric group 3: Packaging & Reporting
+        # Metric Group 3: Packaging & Reporting
         "12_5_6": {
             "packaging_reduction_pct": None, "recycling_rate_pct": None,
             "sustainable_products_pct": None, "waste_disclosure_audit": False,
             "emission_plans": False, "annual_progress_disclosed": False, "no_goals": False,
             "high_carbon_assets_disclosed": False
         },
-        # Metric group 4: Supplier Management
+        # Metric Group 4: Supplier Management
         "12_7": {
             "esg_audited_suppliers_pct": None, "price_only_procurement": False,
             "supply_chain_transparency": False
@@ -577,27 +577,27 @@ def generate_evaluation_report(eval_data, target_scores, overall_score, rating, 
     report.extend([
         "",
         "### 4. Detailed Responsible Production Performance",
-        "**Metric Group 12.2: Sustainable Resource Management**",
+        "**SDG 12.2: Sustainable Resource Management**",
         "   - Actions: Renewable energy integration, recycled water use, recycled material sourcing",
         f"   - Score: {target_scores['12.2']}/{METRIC_MAX_SCORES['12.2']}",
         "",
-        "**Metric Group 12.3: Material Waste Reduction**",
+        "**SDG 12.3: Material Waste Reduction**",
         "   - Actions: Production loss tracking, annual loss reduction initiatives",
         f"   - Score: {target_scores['12.3']}/{METRIC_MAX_SCORES['12.3']}",
         "",
-        "**Metric Group 12.4: Chemical & Waste Management**",
+        "**SDG 12 12.4: Chemical & Waste Management**",
         "   - Actions: MRSL/ZDHC compliance, hazardous waste recovery, emission testing",
         f"   - Score: {target_scores['12.4']}/{METRIC_MAX_SCORES['12.4']}",
         "",
-        "**Metric Group 12.5: Waste Reduction & Recycling**",
+        "**SDG 12.5: Waste Reduction & Recycling**",
         "   - Actions: Packaging optimization, recycling programs, sustainable product design",
         f"   - Score: {target_scores['12.5']}/{METRIC_MAX_SCORES['12.5']}",
         "",
-        "**Metric Group 12.6: Transparent Reporting**",
+        "**SDG 12.6: Transparent Reporting**",
         "   - Actions: Emission reduction goals, annual progress disclosure",
         f"   - Score: {target_scores['12.6']}/{METRIC_MAX_SCORES['12.6']}",
         "",
-        "**Metric Group 12.7: Responsible Procurement**",
+        "**SDG 12.7: Responsible Procurement**",
         "   - Actions: ESG supplier audits, supply chain transparency",
         f"   - Score: {target_scores['12.7']}/{METRIC_MAX_SCORES['12.7']}",
     ])
@@ -1052,7 +1052,7 @@ def render_report_page():
             strengths = [m for m in eval_data["target_scores"] if m != "Others" and eval_data["target_scores"][m] >= METRIC_MAX_SCORES[m] * 0.7]
             if strengths:
                 for s in strengths:
-                    st.write(f"- **Metric Group {s}**: {eval_data['target_scores'][s]}/{METRIC_MAX_SCORES[s]} (Exceeds 70% of maximum)")
+                    st.write(f"- **SDG {s}**: {eval_data['target_scores'][s]}/{METRIC_MAX_SCORES[s]} (Exceeds 70% of maximum)")
             else:
                 st.write("- Identify initial responsible production practices to build upon (e.g., basic recycling programs)")
             st.markdown("</div>", unsafe_allow_html=True)
@@ -1068,7 +1068,7 @@ def render_report_page():
             weaknesses = [m for m in eval_data["target_scores"] if m != "Others" and eval_data["target_scores"][m] < METRIC_MAX_SCORES[m] * 0.5]
             if weaknesses:
                 for w in weaknesses:
-                    st.write(f"- **Metric Group {w}**: {eval_data['target_scores'][w]}/{METRIC_MAX_SCORES[w]} (Below 50% of maximum)")
+                    st.write(f"- **SDG {w}**: {eval_data['target_scores'][w]}/{METRIC_MAX_SCORES[w]} (Below 50% of maximum)")
             else:
                 st.write("- Maintain current practices and set stretch goals (e.g., increase renewable energy to 60%)")
             st.markdown("</div>", unsafe_allow_html=True)
