@@ -627,8 +627,8 @@ def generate_evaluation_report(eval_data, target_scores, overall_score, rating, 
 # --- UI Functions (Purple Theme, No File Name Mentions)
 def render_home_page():
     """Home page (PDF upload + manual input options)."""
-    st.title("🌱 Responsible Production Evaluation", anchor=False)
-    st.write("Evaluate corporate performance on responsible production (Environmental Dimension of ESG)")
+    st.title("Environmental Custodian", anchor=False)
+    st.write("Evaluate corporate environmental impact on responsible production ")
     
     # Fix purple UI styling (override default red)
     st.markdown(
@@ -964,7 +964,7 @@ def render_report_page():
     st.title("Responsible Production Evaluation Report", anchor=False)
 
     # Tabs to organize content (reduce vertical space)
-    tab1, tab2, tab3 = st.tabs(["Metrics & Chart", "Detailed Report", "Insights & Recommendations"])
+    tab1, tab2, tab3 = st.tabs(["Metrics & Chart", "Insights & Recommendations", "Detailed Report"])
 
     with tab1:
         # Rating card (purple theme)
@@ -1025,7 +1025,7 @@ def render_report_page():
         plt.tight_layout()
         st.pyplot(fig)
 
-    with tab2:
+    with tab3:
         # Collapsible detailed report
         with st.expander("View Detailed Evaluation Report", expanded=False):
             st.text(st.session_state["report_text"])
@@ -1038,7 +1038,7 @@ def render_report_page():
             use_container_width=True
         )
 
-    with tab3:
+    with tab2:
         # Strengths & weaknesses (purple-themed cards)
         col1, col2 = st.columns([1, 1], gap="medium")
         with col1:
