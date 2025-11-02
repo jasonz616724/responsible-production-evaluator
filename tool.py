@@ -627,7 +627,7 @@ def generate_evaluation_report(eval_data, target_scores, overall_score, rating, 
 # --- UI Functions (Purple Theme, No File Name Mentions)
 def render_home_page():
     """Home page (PDF upload + manual input options)."""
-    st.title("Environmental Custodian", anchor=False)
+    st.title("🌏 Environmental Custodian", anchor=False)
     st.write("Evaluate corporate environmental impact on responsible production ")
     
     # Fix purple UI styling (override default red)
