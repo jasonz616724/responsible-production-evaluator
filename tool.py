@@ -977,7 +977,7 @@ def render_report_page():
         st.markdown(
             f"""
             <div style="background-color:{rating_colors[eval_data['rating']]}; color:white; padding:20px; border-radius:10px; margin-bottom:30px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
-            <h2 style="margin-top:0;">Overall Rating</h2>
+            <h2 style="margin-top:0;">Overall Rating for {eval_data['company_name']</h2>
             <h3>{eval_data['rating']}</h3>
             <h4 style="font-size:1.5em;">Total Score: {eval_data['overall_score']}/100</h4>
             <p><strong>Industry:</strong> {eval_data['industry']}</p>
